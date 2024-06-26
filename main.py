@@ -8,6 +8,9 @@ from colorama import init, Fore, ansi
 init()
 
 # Define constants
+STDOUT = 0
+STDERR = 1
+
 TESTS_JSON_FILE_NAME = "uri_testim.json"
 WORKDIR_INDEX = 1
 EXPECTED_ARGS_AMOUNT = 2
@@ -70,24 +73,7 @@ def print_failed_test_due_to_exception(test_name: str, expected_output: str, exc
     print(f"{exception}\n")
 
 
-def run_test(executable_path: str, test: dict[str, str|dict[str, str]], templates: dict[str, str]) -> bool:
-    print_divider()
-    for key in TESTS_KEYS:
-        if key not in test:
-            name = test.get("name", "<missing>")
-            print_colored_text(Fore.RED, f"Test \"{name}\": {key} missing from test object", "\n", "\n")
-            return False
-
-    args = templates[test[TEMPLATE_NAME]]
-    for param_name, param_value in test[PARAMS].items():
-        args.replace(f':::{param_name}:::', param_value)
-
-    name = test[TEST_NAME]
-    expected_output_path = test[EXPECTED_OUTPUT_FILE]
-
-    with open(expected_output_path, "r", encoding='utf-8') as file:
-        expected_output = normalize_newlines(file.read())
-
+def execute_test(executable_path: str, args: str, name: str, expected_output: str) -> bool:
     try:
         with subprocess.Popen(args, executable=executable_path) as proc:
             try:
@@ -106,17 +92,76 @@ def run_test(executable_path: str, test: dict[str, str|dict[str, str]], template
         print_failed_test_due_to_exception(name, expected_output, str(e))
         return False
 
-    output_path = test[OUTPUT_FILE]
 
-    with open(output_path, "r", encoding='utf-8') as file:
-        actual_output = normalize_newlines(file.read())
+def execute_valgrind_test(command: str, name: str, expected_output: str) -> bool:
+    try:
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE)
+        try:
+            result = proc.communicate(timeout=TIMEOUT)[STDOUT]
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            result = proc.communicate()
+            # Try using stderr or fallback to stdout
+            result = result[STDERR] if result[STDERR] else result[STDOUT]
+        try:
+            actual_output = normalize_newlines(result.decode('utf-8'))
+        except UnicodeDecodeError:
+            actual_output = normalize_newlines(result.decode('windows-1252'))
 
-    if actual_output == expected_output:
-        print_colored_text(Fore.GREEN, f"{name} - Passed! ", "\n", "\n")
+    except subprocess.CalledProcessError as e:
+        print_failed_test_due_to_exception(name, expected_output, e.stderr if e.stderr else e.stdout)
+        return False
+    except subprocess.TimeoutExpired as e:
+        print_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout)
+        return False
+    except Exception as e:
+        print_failed_test_due_to_exception(name, expected_output, str(e))
+        return False
+    if 'no leaks are possible' in actual_output:
+        print_colored_text(Fore.GREEN, f"{name} - no Leaks! ", "\n", "\n")
         return True
     else:
-        print_failed_test(name, expected_output, actual_output)
+        print_colored_text(Fore.RED, f"{name} - has leaks!", "\n", "\n")
+        print_colored_text(Fore.RED, actual_output, "\n", "\n")
         return False
+
+
+
+def run_test(executable_path: str, test: dict[str, str | dict[str, str]], templates: dict[str, str]) -> bool:
+    print_divider()
+    for key in TESTS_KEYS:
+        if key not in test:
+            name = test.get("name", "<missing>")
+            print_colored_text(Fore.RED, f"Test \"{name}\": {key} missing from test object", "\n", "\n")
+            return False
+
+    args = templates[test[TEMPLATE_NAME]]
+    for param_name, param_value in test[PARAMS].items():
+        args = args.replace(f':::{param_name}:::', param_value)
+
+    name = test[TEST_NAME]
+    expected_output_path = test[EXPECTED_OUTPUT_FILE]
+
+    with open(expected_output_path, "r", encoding='utf-8') as file:
+        expected_output = normalize_newlines(file.read())
+
+    test_success = execute_test(executable_path, args, name, expected_output)
+    if test_success:
+        output_path = test[OUTPUT_FILE]
+
+        with open(output_path, "r", encoding='utf-8') as file:
+            actual_output = normalize_newlines(file.read())
+
+        if actual_output == expected_output:
+            print_colored_text(Fore.GREEN, f"{name} - Passed! ", "\n", "\n")
+            test_success = True
+        else:
+            print_failed_test(name, expected_output, actual_output)
+            test_success = False
+
+    valgrind_command = f'valgrind --leak-check=full {executable_path} {args}'
+    valgrind_success = execute_valgrind_test(valgrind_command, name, expected_output)
+    return valgrind_success and test_success
 
 
 def get_all_tests_from_json(workdir: str) -> list[dict[str, str]] | None:

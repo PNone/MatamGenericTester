@@ -1,0 +1,52 @@
+{
+  "executable": "./mtm_blockchain",
+  "templates": {
+    "verify": "verify :::source::: :::target::: > :::out:::",
+    "hash": "hash :::source::: :::target:::",
+    "compress": "compress :::source::: :::target:::",
+    "format": "format :::source::: :::target:::"
+  },
+  "tests": [
+    {
+      "name": "Verify Example Test",
+      "template": "verify",
+      "params": {
+        "source": "./tests/verify.source",
+        "target": "./tests/verify.target",
+        "out": "./tests/verify.out"
+      },
+      "output_file": "./tests/verify.out",
+      "expected_output_file": "./tests/verify.expected"
+    },
+    {
+      "name": "Hash Example Test",
+      "template": "hash",
+      "params": {
+        "source": "./tests/hash.source",
+        "target": "./tests/hash.target.out"
+      },
+      "output_file": "./tests/hash.target.out",
+      "expected_output_file": "./tests/hash.target.expected"
+    },
+    {
+      "name": "Compress Example Test",
+      "template": "compress",
+      "params": {
+        "source": "./tests/compress.source",
+        "target": "./tests/compress.target.out"
+      },
+      "output_file": "./tests/compress.target.out",
+      "expected_output_file": "./tests/compress.target.expected"
+    },
+    {
+      "name": "Format Example Test",
+      "template": "format",
+      "params": {
+        "source": "./tests/format.source",
+        "target": "./tests/format.target.out"
+      },
+      "output_file": "./tests/format.target.out",
+      "expected_output_file": "./tests/format.target.expected"
+    }
+  ]
+}

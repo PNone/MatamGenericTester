@@ -29,7 +29,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Compile Python code to executable
-        run: pyinstaller --paths=$(python -c "import site; print(site.getsitepackages())") --onefile main.py -n student_test --distpath ./LocalGradescope
+        run: pyinstaller --paths=$(python -c "import site; print(site.getsitepackages())") --onefile run_tests.py -n student_test --distpath ./LocalGradescope
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

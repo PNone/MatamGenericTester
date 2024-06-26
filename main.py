@@ -1,5 +1,5 @@
 import sys
-from os import environ, path
+from os import environ, path, getcwd
 import subprocess
 import json
 from colorama import init, Fore, ansi
@@ -12,7 +12,7 @@ STDOUT = 0
 STDERR = 1
 
 TESTS_JSON_FILE_NAME = "uri_testim.json"
-WORKDIR_INDEX = 1
+TESTS_FOLDER_INDEX = 1
 EXPECTED_ARGS_AMOUNT = 2
 TEMPLATES = 'templates'
 EXECUTABLE = 'executable'
@@ -32,6 +32,7 @@ TESTS_KEYS = (
 )
 
 TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
+VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
 
 
 def normalize_newlines(txt: str) -> str:
@@ -39,10 +40,12 @@ def normalize_newlines(txt: str) -> str:
 
 
 def print_divider() -> None:
-    print(f"\n{Fore.CYAN}------------------------------------------------------------{Fore.RESET}\n")
+    print(
+        f"\n{Fore.CYAN}------------------------------------------------------------{Fore.RESET}\n")
 
 
-def print_colored_text(color: ansi.AnsiFore | str, text: str, before_text: str, after_text: str) -> None:
+def print_colored_text(color: ansi.AnsiFore | str, text: str, before_text: str,
+                       after_text: str) -> None:
     print(
         f"{before_text}{color}{text}{Fore.RESET}{after_text}"
     )
@@ -65,7 +68,8 @@ def print_failed_test(test_name: str, expected_output: str, actual_output: str) 
     print(f"{actual_output}\n")
 
 
-def print_failed_test_due_to_exception(test_name: str, expected_output: str, exception: str) -> None:
+def print_failed_test_due_to_exception(test_name: str, expected_output: str,
+                                       exception: str) -> None:
     print_colored_text(Fore.RED, f"{test_name} - Failed due to an error in the tester!", "\n", "\n")
     print_colored_text(Fore.BLUE, "Expected Output:", "", "\n")
     print(f"{expected_output}\n")
@@ -73,31 +77,43 @@ def print_failed_test_due_to_exception(test_name: str, expected_output: str, exc
     print(f"{exception}\n")
 
 
+def print_failed_valgrind(test_name: str, exception: str) -> None:
+    print_colored_text(Fore.RED, f"{test_name} - Failed due to an error raised by valgrind!", "\n", "\n")
+    print_colored_text(Fore.BLUE, "Error:", "", "\n")
+    print(f"{exception}\n")
+
+
 def execute_test(executable_path: str, args: str, name: str, expected_output: str) -> bool:
     try:
-        with subprocess.Popen(args, executable=executable_path) as proc:
+        with subprocess.Popen(f'{executable_path} {args}', shell=True, cwd=getcwd()) as proc:
             try:
                 proc.communicate(timeout=TIMEOUT)
             except subprocess.TimeoutExpired as e:
                 proc.kill()
-                print_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout)
+                print_failed_test_due_to_exception(name, expected_output,
+                                                   str(e.stderr) if e.stderr else e.stdout)
                 return False
     except subprocess.CalledProcessError as e:
-        print_failed_test_due_to_exception(name, expected_output, e.stderr if e.stderr else e.stdout)
+        print_failed_test_due_to_exception(name, expected_output,
+                                           e.stderr if e.stderr else e.stdout)
         return False
     except subprocess.TimeoutExpired as e:
-        print_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout)
+        print_failed_test_due_to_exception(name, expected_output,
+                                           str(e.stderr) if e.stderr else e.stdout)
         return False
     except Exception as e:
         print_failed_test_due_to_exception(name, expected_output, str(e))
         return False
 
+    return True
 
-def execute_valgrind_test(command: str, name: str, expected_output: str) -> bool:
+
+def execute_valgrind_test(command: str, name: str) -> bool:
     try:
-        proc = subprocess.Popen(command, stdout=subprocess.PIPE)
+        proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
+                                cwd=getcwd())
         try:
-            result = proc.communicate(timeout=TIMEOUT)[STDOUT]
+            result = proc.communicate(timeout=VALGRIND_TIMEOUT)[STDERR]
         except subprocess.TimeoutExpired:
             proc.kill()
             result = proc.communicate()
@@ -109,30 +125,32 @@ def execute_valgrind_test(command: str, name: str, expected_output: str) -> bool
             actual_output = normalize_newlines(result.decode('windows-1252'))
 
     except subprocess.CalledProcessError as e:
-        print_failed_test_due_to_exception(name, expected_output, e.stderr if e.stderr else e.stdout)
+        print_failed_valgrind(name, e.stderr if e.stderr else e.stdout)
         return False
     except subprocess.TimeoutExpired as e:
-        print_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout)
+        print_failed_valgrind(name, str(e.stderr) if e.stderr else e.stdout)
         return False
     except Exception as e:
-        print_failed_test_due_to_exception(name, expected_output, str(e))
+        print_failed_valgrind(name, str(e))
         return False
+
     if 'no leaks are possible' in actual_output:
         print_colored_text(Fore.GREEN, f"{name} - no Leaks! ", "\n", "\n")
         return True
     else:
         print_colored_text(Fore.RED, f"{name} - has leaks!", "\n", "\n")
-        print_colored_text(Fore.RED, actual_output, "\n", "\n")
+        print_failed_valgrind(name, actual_output)
         return False
 
 
-
-def run_test(executable_path: str, test: dict[str, str | dict[str, str]], templates: dict[str, str]) -> bool:
+def run_test(executable_path: str, test: dict[str, str | dict[str, str]],
+             templates: dict[str, str]) -> bool:
     print_divider()
     for key in TESTS_KEYS:
         if key not in test:
             name = test.get("name", "<missing>")
-            print_colored_text(Fore.RED, f"Test \"{name}\": {key} missing from test object", "\n", "\n")
+            print_colored_text(Fore.RED, f"Test \"{name}\": {key} missing from test object", "\n",
+                               "\n")
             return False
 
     args = templates[test[TEMPLATE_NAME]]
@@ -160,7 +178,7 @@ def run_test(executable_path: str, test: dict[str, str | dict[str, str]], templa
             test_success = False
 
     valgrind_command = f'valgrind --leak-check=full {executable_path} {args}'
-    valgrind_success = execute_valgrind_test(valgrind_command, name, expected_output)
+    valgrind_success = execute_valgrind_test(valgrind_command, name)
     return valgrind_success and test_success
 
 
@@ -207,16 +225,16 @@ def get_exec_from_json(workdir: str) -> str | None:
 
 
 def main():
-    # Expect 3 args: script name, workdir, executable path
+    # Expect 2 args: script name, workdir, executable path
     if len(sys.argv) != EXPECTED_ARGS_AMOUNT:
         print(
-            f"Bad Usage of local tester, make sure project folder and name are passed properly." +
+            f"Bad Usage of local tester, make sure test folder's name are passed properly." +
             f" Total args passed: {len(sys.argv)}"
         )
         return
 
     failed_count = 0
-    workdir = sys.argv[WORKDIR_INDEX]
+    workdir = sys.argv[TESTS_FOLDER_INDEX]
     tests = get_all_tests_from_json(workdir)
     templates = get_all_templates_from_json(workdir)
     executable = get_exec_from_json(workdir)

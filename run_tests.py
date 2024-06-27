@@ -1,19 +1,42 @@
 import sys
-from os import environ, path, getcwd
+from os import environ, getcwd, chdir
+from os.path import dirname, join, normpath
 import subprocess
 import json
-from colorama import init, Fore, ansi
+from typing import TypedDict, TypeAlias
 
-# Initialize colorama for cross-platform terminal coloring
-init()
+
+TestTemplates: TypeAlias = dict[str, str]
+TestParams: TypeAlias = dict[str, str]
+
+
+class TestCase(TypedDict):
+    name: str
+    template: str
+    params: TestParams
+    output_file: str
+    expected_output_file: str
+
+
+class TestFile(TypedDict):
+    templates: TestTemplates
+    tests: list[TestCase]
+
+
+class TestResult(TypedDict):
+    name: str
+    summary: str
+    passed: bool
+
 
 # Define constants
 STDOUT = 0
 STDERR = 1
 
 TESTS_JSON_FILE_NAME = "uri_testim.json"
-TESTS_FOLDER_INDEX = 1
-EXPECTED_ARGS_AMOUNT = 2
+EXECUTABLE_INDEX = 1
+TESTS_JSON_FILE_INDEX = 2
+EXPECTED_ARGS_AMOUNT = 3
 TEMPLATES = 'templates'
 EXECUTABLE = 'executable'
 
@@ -35,7 +58,7 @@ TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
 
 
-def create_summary_html(results) -> str:
+def generate_summary_html_content(results: list[TestResult]) -> str:
     html = '''
 <!DOCTYPE html>
 <html>
@@ -146,13 +169,6 @@ def normalize_newlines(txt: str) -> str:
     return txt.replace('\r\n', '\n').replace('\r', '\n')
 
 
-def print_colored_text(color: ansi.AnsiFore | str, text: str, before_text: str,
-                       after_text: str) -> None:
-    print(
-        f"{before_text}{color}{text}{Fore.RESET}{after_text}"
-    )
-
-
 def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> str:
     return f"\n{test_name} - Failed!\nExpected Output:\n{expected_output}\nActual Output:{actual_output}\n"
 
@@ -162,53 +178,64 @@ def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
     return f"{test_name} - Failed due to an error in the tester!\nExpected Output:\n{expected_output}\nError:\n{exception}\n"
 
 
-def print_failed_valgrind(test_name: str, exception: str) -> str:
+def summarize_failed_valgrind(test_name: str, exception: str) -> str:
     return f'\n{test_name} has leaks!\n Failed due to an error raised by valgrind!\nError:\n{exception}\n'
 
 
-def execute_test(executable_path: str, args: str, name: str, expected_output: str) -> list[dict[str, str]]:
-    results: list[dict[str, str]] = []
+def execute_test(command: str, name: str, expected_output: str, output_path: str, results: list[TestResult]) -> None:
     try:
-        with subprocess.Popen(f'{executable_path} {args}', shell=True, cwd=getcwd()) as proc:
+        with subprocess.Popen(command, shell=True, cwd=getcwd()) as proc:
             try:
                 proc.communicate(timeout=TIMEOUT)
             except subprocess.TimeoutExpired as e:
                 proc.kill()
                 results.append({
                     'name': name,
-                    'summary': summarize_failed_test_due_to_exception(name, expected_output,
-                                                       str(e.stderr) if e.stderr else e.stdout),
+                    'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout),
                     'passed': False
                 })
-                return results
+                return
     except subprocess.CalledProcessError as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output,
-                                               e.stderr if e.stderr else e.stdout),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output, e.stderr if e.stderr else e.stdout),
             'passed': False
         })
-        return results
+        return
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output,
-                                               str(e.stderr) if e.stderr else e.stdout),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout),
             'passed': False
         })
-        return results
+        return
     except Exception as e:
         results.append({
             'name': name,
             'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e)),
             'passed': False
         })
-        return results
+        return
 
-    return results
+    # norm path makes sure the path is formatted correctly
+    with open(normpath(output_path), "r", encoding='utf-8') as file:
+        actual_output = normalize_newlines(file.read())
+
+    if actual_output == expected_output:
+        results.append({
+            'name': name,
+            'summary': f"\n{name} - Passed!\n",
+            'passed': True
+        })
+    else:
+        results.append({
+            'name': name,
+            'summary': summarize_failed_test(name, expected_output, actual_output),
+            'passed': False
+        })
 
 
-def execute_valgrind_test(command: str, name: str, results: list[dict[str, str]]) -> None:
+def execute_valgrind_test(command: str, name: str, results: list[TestResult]) -> None:
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
                                 cwd=getcwd())
@@ -227,21 +254,21 @@ def execute_valgrind_test(command: str, name: str, results: list[dict[str, str]]
     except subprocess.CalledProcessError as e:
         results.append({
             'name': f'{name} - Valgrind',
-            'summary': print_failed_valgrind(name, e.stderr if e.stderr else e.stdout),
+            'summary': summarize_failed_valgrind(name, e.stderr if e.stderr else e.stdout),
             'passed': False
         })
         return
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': f'{name} - Valgrind',
-            'summary': print_failed_valgrind(name, str(e.stderr) if e.stderr else e.stdout),
+            'summary': summarize_failed_valgrind(name, str(e.stderr) if e.stderr else e.stdout),
             'passed': False
         })
         return
     except Exception as e:
         results.append({
             'name': f'{name} - Valgrind',
-            'summary': print_failed_valgrind(name, str(e)),
+            'summary': summarize_failed_valgrind(name, str(e)),
             'passed': False
         })
 
@@ -257,14 +284,12 @@ def execute_valgrind_test(command: str, name: str, results: list[dict[str, str]]
     else:
         results.append({
             'name': f'{name} - Valgrind',
-            'summary': print_failed_valgrind(name, actual_output),
+            'summary': summarize_failed_valgrind(name, actual_output),
             'passed': False
         })
 
 
-def run_test(executable_path: str, test: dict[str, str | dict[str, str]],
-             templates: dict[str, str]) -> list[dict[str, str]]:
-    results = []
+def run_test(executable_path: str, test: TestCase, templates: TestTemplates, results: list[TestResult]) -> None:
     for key in TESTS_KEYS:
         if key not in test:
             name = test.get("name", "<missing>")
@@ -273,111 +298,73 @@ def run_test(executable_path: str, test: dict[str, str | dict[str, str]],
                 'summary': f"\nTest \"{name}\": {key} missing from test object\n",
                 'passed': False
             })
-            return results
+            return
 
-    args = templates[test[TEMPLATE_NAME]]
+    args: str = templates[test[TEMPLATE_NAME]]
     for param_name, param_value in test[PARAMS].items():
         args = args.replace(f':::{param_name}:::', param_value)
 
-    name = test[TEST_NAME]
+    name: str = test[TEST_NAME]
     expected_output_path = test[EXPECTED_OUTPUT_FILE]
 
-    with open(expected_output_path, "r", encoding='utf-8') as file:
+    # norm path makes sure the path is formatted correctly
+    with open(normpath(expected_output_path), "r", encoding='utf-8') as file:
         expected_output = normalize_newlines(file.read())
 
-    test_success = execute_test(executable_path, args, name, expected_output)
-    if len(test_success) == 0:
-        output_path = test[OUTPUT_FILE]
-
-        with open(output_path, "r", encoding='utf-8') as file:
-            actual_output = normalize_newlines(file.read())
-
-        if actual_output == expected_output:
-            results.append({
-                'name': name,
-                'summary': f"\n{name} - Passed!\n",
-                'passed': True
-            })
-        else:
-            results.append({
-                'name': name,
-                'summary': summarize_failed_test(name, expected_output, actual_output),
-                'passed': False
-            })
-    else:
-        results += test_success
-
-    valgrind_command = f'valgrind --leak-check=full {executable_path} {args}'
+    output_path = test[OUTPUT_FILE]
+    test_command: str = f'{executable_path} {args}'
+    valgrind_command: str = f'valgrind --leak-check=full {executable_path} {args}'
+    execute_test(test_command, name, expected_output, output_path, results)
     execute_valgrind_test(valgrind_command, name, results)
-    return results
 
 
-def get_all_tests_from_json(workdir: str) -> list[dict[str, str]] | None:
-    tests_file_path = path.join(workdir, TESTS_JSON_FILE_NAME)
+def get_tests_data_from_json(tests_file_path: str) -> TestFile:
     try:
         with open(tests_file_path, "r", encoding='utf-8') as file:
             json_data = json.load(file)
-            return json_data["tests"]
+            return json_data
     except (IOError, json.JSONDecodeError) as e:
-        print_colored_text(Fore.RED, f"Error reading JSON file: {e}", "", "")
-        return None
+        print(f"Error reading tests JSON file: {e}")
+        raise e
     except Exception as e:
-        print_colored_text(Fore.RED, f"Unexpected error reading JSON file: {e}", "", "")
-        return None
+        print(f"Unexpected error reading tests JSON file: {e}")
+        raise e
 
 
-def get_all_templates_from_json(workdir: str) -> dict[str, str] | None:
-    tests_file_path = path.join(workdir, TESTS_JSON_FILE_NAME)
+def create_html_report(html: str) -> None:
     try:
-        with open(tests_file_path, "r", encoding='utf-8') as file:
-            json_data = json.load(file)
-            return json_data[TEMPLATES]
-    except (IOError, json.JSONDecodeError) as e:
-        print_colored_text(Fore.RED, f"Error reading JSON file: {e}", "", "")
-        return None
+        with open('out.html', "w", encoding='utf-8') as file:
+            file.write(html)
     except Exception as e:
-        print_colored_text(Fore.RED, f"Unexpected error reading JSON file: {e}", "", "")
-        return None
-
-
-def get_exec_from_json(workdir: str) -> str | None:
-    tests_file_path = path.join(workdir, TESTS_JSON_FILE_NAME)
-    try:
-        with open(tests_file_path, "r", encoding='utf-8') as file:
-            json_data = json.load(file)
-            return json_data[EXECUTABLE]
-    except (IOError, json.JSONDecodeError) as e:
-        print_colored_text(Fore.RED, f"Error reading JSON file: {e}", "", "")
-        return None
-    except Exception as e:
-        print_colored_text(Fore.RED, f"Unexpected error reading JSON file: {e}", "", "")
-        return None
+        print('Could not create html report. Report content:')
+        print(html)
+        raise e
 
 
 def main():
-    # Expect 2 args: script name, workdir, executable path
+    # Expect 3 args: script name, executable path, json path
     if len(sys.argv) != EXPECTED_ARGS_AMOUNT:
         print(
-            f"Bad Usage of local tester, make sure test folder's name are passed properly." +
+            f"Bad Usage of local tester, make sure executable path and json test file's path are passed properly." +
             f" Total args passed: {len(sys.argv)}"
         )
         return
 
-    workdir = sys.argv[TESTS_FOLDER_INDEX]
-    tests = get_all_tests_from_json(workdir)
-    templates = get_all_templates_from_json(workdir)
-    executable = get_exec_from_json(workdir)
-    if tests is None:
-        return
+    # norm path makes sure the path is formatted correctly
+    executable = normpath(join(getcwd(), sys.argv[EXECUTABLE_INDEX]))
+    tests_file_path = normpath(join(getcwd(), sys.argv[TESTS_JSON_FILE_INDEX]))
 
-    results: list[dict[str, str]] = []
+    workdir = dirname(tests_file_path)
+    chdir(workdir)
 
-    for test in tests:
-        results += run_test(executable, test, templates)
+    tests_data: TestFile = get_tests_data_from_json(tests_file_path)
+    results: list[TestResult] = []
 
-    html = create_summary_html(results)
-    with open(f'{workdir}/out.html', "w", encoding='utf-8') as file:
-        file.write(html)
+    for test in tests_data['tests']:
+        run_test(executable, test, tests_data['templates'], results)
+
+    html = generate_summary_html_content(results)
+    create_html_report(html)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,4 @@
 {
-  "executable": "./mtm_blockchain",
   "templates": {
     "verify": "verify :::source::: :::target::: > :::out:::",
     "hash": "hash :::source::: :::target:::",

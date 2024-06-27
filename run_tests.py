@@ -33,26 +33,15 @@ class TestResult(TypedDict):
 STDOUT = 0
 STDERR = 1
 
-TESTS_JSON_FILE_NAME = "uri_testim.json"
 EXECUTABLE_INDEX = 1
 TESTS_JSON_FILE_INDEX = 2
 EXPECTED_ARGS_AMOUNT = 3
-TEMPLATES = 'templates'
-EXECUTABLE = 'executable'
 
 TEST_NAME = 'name'
 TEMPLATE_NAME = 'template'
 PARAMS = 'params'
 OUTPUT_FILE = 'output_file'
 EXPECTED_OUTPUT_FILE = 'expected_output_file'
-
-TESTS_KEYS = (
-    TEST_NAME,
-    TEMPLATE_NAME,
-    PARAMS,
-    OUTPUT_FILE,
-    EXPECTED_OUTPUT_FILE
-)
 
 TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
@@ -290,12 +279,12 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
 
 
 def run_test(executable_path: str, test: TestCase, templates: TestTemplates, results: list[TestResult]) -> None:
-    for key in TESTS_KEYS:
+    for key in TestCase.__annotations__:
         if key not in test:
             name = test.get("name", "<missing>")
             results.append({
                 'name': name,
-                'summary': f"\nTest \"{name}\": {key} missing from test object\n",
+                'summary': f"\nTest \"{name}\": \"{key}\" missing from test object\n",
                 'passed': False
             })
             return

@@ -5,7 +5,6 @@ import subprocess
 import json
 from typing import TypedDict, TypeAlias
 
-
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
 
@@ -48,6 +47,7 @@ VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  #
 
 
 def generate_summary_html_content(results: list[TestResult]) -> str:
+    newline = '\n'
     html = '''
 <!DOCTYPE html>
 <html>
@@ -62,7 +62,7 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
         html += f'''
         <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">{result['name']}</button>
 <div class="content">
-  <p>{result['summary']}</p>
+  <p>{result['summary'].replace(newline, '<br/>')}</p>
 </div>
 '''
 
@@ -159,7 +159,7 @@ def normalize_newlines(txt: str) -> str:
 
 
 def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> str:
-    return f"\n{test_name} - Failed!\nExpected Output:\n{expected_output}\nActual Output:{actual_output}\n"
+    return f"\n{test_name} - Failed!\nExpected Output:\n\n{expected_output}\nActual Output:\n\n{actual_output}\n"
 
 
 def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
@@ -171,7 +171,8 @@ def summarize_failed_valgrind(test_name: str, exception: str) -> str:
     return f'\n{test_name} has leaks!\n Failed due to an error raised by valgrind!\nError:\n{exception}\n'
 
 
-def execute_test(command: str, name: str, expected_output: str, output_path: str, results: list[TestResult]) -> None:
+def execute_test(command: str, name: str, expected_output: str, output_path: str,
+                 results: list[TestResult]) -> None:
     try:
         with subprocess.Popen(command, shell=True, cwd=getcwd()) as proc:
             try:
@@ -180,21 +181,24 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
                 proc.kill()
                 results.append({
                     'name': name,
-                    'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout),
+                    'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                                      str(e.stderr) if e.stderr else e.stdout),
                     'passed': False
                 })
                 return
     except subprocess.CalledProcessError as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output, e.stderr if e.stderr else e.stdout),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                              e.stderr if e.stderr else e.stdout),
             'passed': False
         })
         return
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e.stderr) if e.stderr else e.stdout),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                              str(e.stderr) if e.stderr else e.stdout),
             'passed': False
         })
         return
@@ -278,7 +282,8 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
         })
 
 
-def run_test(executable_path: str, test: TestCase, templates: TestTemplates, results: list[TestResult]) -> None:
+def run_test(executable_path: str, test: TestCase, templates: TestTemplates,
+             results: list[TestResult]) -> None:
     for key in TestCase.__annotations__:
         if key not in test:
             name = test.get("name", "<missing>")

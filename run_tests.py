@@ -4,6 +4,7 @@ from os.path import dirname, join, normpath
 import subprocess
 import json
 from typing import TypedDict, TypeAlias
+from test_report_app import TestReportApp
 
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
@@ -359,6 +360,8 @@ def main():
 
     html = generate_summary_html_content(results)
     create_html_report(html)
+    textualApp = TestReportApp(results)
+    textualApp.run()
 
 
 if __name__ == "__main__":

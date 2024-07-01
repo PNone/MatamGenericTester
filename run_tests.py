@@ -359,8 +359,14 @@ def main():
     tests_data: TestFile = get_tests_data_from_json(tests_file_path)
     results: list[TestResult] = []
 
+    print("Running tests, please wait", sep="")
     for test in tests_data['tests']:
         run_test(executable, test, tests_data['templates'], results)
+        # Printing a dot after each test to make user aware of progress
+        print(".", sep="")
+
+    # Print new line to avoid console starting on same line as dots
+    print("\n", sep="")
 
     html = generate_summary_html_content(results)
     chdir(initial_workdir)

@@ -327,7 +327,7 @@ def get_tests_data_from_json(tests_file_path: str) -> TestFile:
 
 def create_html_report(html: str) -> None:
     try:
-        with open('out.html', "w", encoding='utf-8') as file:
+        with open('test_results.html', "w", encoding='utf-8') as file:
             file.write(html)
     except Exception as e:
         print('Could not create html report. Report content:')
@@ -344,9 +344,11 @@ def main():
         )
         return
 
+    initial_workdir = getcwd()
+
     # norm path makes sure the path is formatted correctly
-    executable = normpath(join(getcwd(), sys.argv[EXECUTABLE_INDEX]))
-    tests_file_path = normpath(join(getcwd(), sys.argv[TESTS_JSON_FILE_INDEX]))
+    executable = normpath(join(initial_workdir, sys.argv[EXECUTABLE_INDEX]))
+    tests_file_path = normpath(join(initial_workdir, sys.argv[TESTS_JSON_FILE_INDEX]))
 
     workdir = dirname(tests_file_path)
     chdir(workdir)
@@ -358,6 +360,7 @@ def main():
         run_test(executable, test, tests_data['templates'], results)
 
     html = generate_summary_html_content(results)
+    chdir(initial_workdir)
     create_html_report(html)
 
 

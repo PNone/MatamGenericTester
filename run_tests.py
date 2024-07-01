@@ -62,7 +62,7 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
         html += f'''
         <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">{result['name']}</button>
 <div class="content">
-  <p>{result['summary'].replace(newline, '<br/>')}</p>
+  <p>{result['summary'].replace(newline, '<br/>').replace('<', '&lt;').replace('>', '&gt;')}</p>
 </div>
 '''
 

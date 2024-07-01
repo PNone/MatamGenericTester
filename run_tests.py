@@ -48,6 +48,9 @@ VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  #
 
 def generate_summary_html_content(results: list[TestResult]) -> str:
     newline = '\n'
+    less_than = '<'
+    greater_than = '>'
+
     html = '''
 <!DOCTYPE html>
 <html>
@@ -62,7 +65,7 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
         html += f'''
         <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">{result['name']}</button>
 <div class="content">
-  <p>{result['summary'].replace(newline, '<br/>').replace('<', '&lt;').replace('>', '&gt;')}</p>
+  <p>{result['summary'].replace(newline, '<br/>').replace(less_than, '&lt;').replace(greater_than, '&gt;')}</p>
 </div>
 '''
 

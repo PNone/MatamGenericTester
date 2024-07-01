@@ -65,7 +65,7 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
         html += f'''
         <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">{result['name']}</button>
 <div class="content">
-  <p>{result['summary'].replace(newline, '<br/>').replace(less_than, '&lt;').replace(greater_than, '&gt;')}</p>
+  <p>{result['summary'].replace(less_than, '&lt;').replace(greater_than, '&gt;').replace(newline, '<br/>')}</p>
 </div>
 '''
 

@@ -26,6 +26,7 @@ class TestResult(TypedDict):
     name: str
     summary: str
     passed: bool
+    command: str | None
 
 
 # Define constants
@@ -46,10 +47,14 @@ TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
 
 
-def generate_summary_html_content(results: list[TestResult]) -> str:
+def format_test_string_for_html(field: str) -> str:
     newline = '\n'
     less_than = '<'
     greater_than = '>'
+    return field.replace(less_than, '&lt;').replace(greater_than, '&gt;').replace(newline, '<br/>')
+
+
+def generate_summary_html_content(results: list[TestResult]) -> str:
 
     html = '''
 <!DOCTYPE html>
@@ -62,10 +67,13 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
 
     '''
     for result in results:
+        command_element: str = f"<p>Test Command:<br/>{format_test_string_for_html(result['command'])}</p>" \
+            if result.get('command', None) else ''
         html += f'''
         <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">{result['name']}</button>
 <div class="content">
-  <p>{result['summary'].replace(less_than, '&lt;').replace(greater_than, '&gt;').replace(newline, '<br/>')}</p>
+  {command_element}
+  <p>{format_test_string_for_html(result['summary'])}</p>
 </div>
 '''
 
@@ -186,7 +194,8 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
                     'name': name,
                     'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                                       str(e.stderr) if e.stderr else e.stdout),
-                    'passed': False
+                    'passed': False,
+                    'command': command
                 })
                 return
     except subprocess.CalledProcessError as e:
@@ -194,7 +203,8 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
             'name': name,
             'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                               e.stderr if e.stderr else e.stdout),
-            'passed': False
+            'passed': False,
+            'command': command
         })
         return
     except subprocess.TimeoutExpired as e:
@@ -202,14 +212,16 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
             'name': name,
             'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                               str(e.stderr) if e.stderr else e.stdout),
-            'passed': False
+            'passed': False,
+            'command': command
         })
         return
     except Exception as e:
         results.append({
             'name': name,
             'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e)),
-            'passed': False
+            'passed': False,
+            'command': command
         })
         return
 
@@ -227,7 +239,8 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
         results.append({
             'name': name,
             'summary': summarize_failed_test(name, expected_output, actual_output),
-            'passed': False
+            'passed': False,
+            'command': command
         })
 
 
@@ -251,21 +264,24 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
         results.append({
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, e.stderr if e.stderr else e.stdout),
-            'passed': False
+            'passed': False,
+            'command': command
         })
         return
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, str(e.stderr) if e.stderr else e.stdout),
-            'passed': False
+            'passed': False,
+            'command': command
         })
         return
     except Exception as e:
         results.append({
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, str(e)),
-            'passed': False
+            'passed': False,
+            'command': command
         })
 
         return
@@ -281,7 +297,8 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
         results.append({
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, actual_output),
-            'passed': False
+            'passed': False,
+            'command': command
         })
 
 

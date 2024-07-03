@@ -3,12 +3,13 @@ from os import environ, getcwd, chdir
 from os.path import dirname, join, normpath
 import subprocess
 import json
-from typing import TypedDict, TypeAlias
+if sys.version_info < (3, 10):
+    sys.exit("Python %s.%s or later is required.\n" % (3, 10))
+else:
+    from typing import TypedDict, TypeAlias
 
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
-
-MIN_PYTHON = (3, 10)
 
 
 class TestCase(TypedDict):
@@ -358,8 +359,6 @@ def create_html_report(html: str) -> None:
 
 
 def main():
-    if sys.version_info < MIN_PYTHON:
-        sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
     # Expect 3 args: script name, executable path, json path
     if len(sys.argv) != EXPECTED_ARGS_AMOUNT:
         print(

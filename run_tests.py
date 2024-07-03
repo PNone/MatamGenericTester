@@ -8,6 +8,8 @@ from typing import TypedDict, TypeAlias
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
 
+MIN_PYTHON = (3, 10)
+
 
 class TestCase(TypedDict):
     name: str
@@ -182,7 +184,7 @@ def summarize_failed_valgrind(test_name: str, exception: str) -> str:
     return f'\n{test_name} has leaks!\n Failed due to an error raised by valgrind!\nError:\n{exception}\n'
 
 
-def execute_test(command: str, name: str, expected_output: str, output_path: str,
+def execute_test(command: str, relative_workdir: str, name: str, expected_output: str, output_path: str,
                  results: list[TestResult]) -> None:
     try:
         with subprocess.Popen(command, shell=True, cwd=getcwd()) as proc:
@@ -195,7 +197,7 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
                     'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                                       str(e.stderr) if e.stderr else e.stdout),
                     'passed': False,
-                    'command': command
+                    'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
                 })
                 return
     except subprocess.CalledProcessError as e:
@@ -204,7 +206,7 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
             'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                               e.stderr if e.stderr else e.stdout),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except subprocess.TimeoutExpired as e:
@@ -213,7 +215,7 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
             'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                               str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except Exception as e:
@@ -221,7 +223,7 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
             'name': name,
             'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e)),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
 
@@ -240,11 +242,11 @@ def execute_test(command: str, name: str, expected_output: str, output_path: str
             'name': name,
             'summary': summarize_failed_test(name, expected_output, actual_output),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
 
 
-def execute_valgrind_test(command: str, name: str, results: list[TestResult]) -> None:
+def execute_valgrind_test(command: str, relative_workdir: str, name: str, results: list[TestResult]) -> None:
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
                                 cwd=getcwd())
@@ -265,7 +267,7 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, e.stderr if e.stderr else e.stdout),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except subprocess.TimeoutExpired as e:
@@ -273,7 +275,7 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except Exception as e:
@@ -281,7 +283,7 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, str(e)),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
 
         return
@@ -298,11 +300,11 @@ def execute_valgrind_test(command: str, name: str, results: list[TestResult]) ->
             'name': f'{name} - Valgrind',
             'summary': summarize_failed_valgrind(name, actual_output),
             'passed': False,
-            'command': command
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
 
 
-def run_test(executable_path: str, test: TestCase, templates: TestTemplates,
+def run_test(executable_path: str, relative_workdir: str, test: TestCase, templates: TestTemplates,
              results: list[TestResult]) -> None:
     for key in TestCase.__annotations__:
         if key not in test:
@@ -328,8 +330,8 @@ def run_test(executable_path: str, test: TestCase, templates: TestTemplates,
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
     valgrind_command: str = f'valgrind --leak-check=full {executable_path} {args}'
-    execute_test(test_command, name, expected_output, output_path, results)
-    execute_valgrind_test(valgrind_command, name, results)
+    execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
+    execute_valgrind_test(valgrind_command, relative_workdir, name, results)
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:
@@ -356,6 +358,8 @@ def create_html_report(html: str) -> None:
 
 
 def main():
+    if sys.version_info < MIN_PYTHON:
+        sys.exit("Python %s.%s or later is required.\n" % MIN_PYTHON)
     # Expect 3 args: script name, executable path, json path
     if len(sys.argv) != EXPECTED_ARGS_AMOUNT:
         print(
@@ -371,6 +375,7 @@ def main():
     tests_file_path = normpath(join(initial_workdir, sys.argv[TESTS_JSON_FILE_INDEX]))
 
     workdir = dirname(tests_file_path)
+    relative_workdir = dirname(sys.argv[TESTS_JSON_FILE_INDEX])
     chdir(workdir)
 
     tests_data: TestFile = get_tests_data_from_json(tests_file_path)
@@ -378,7 +383,7 @@ def main():
 
     print("Running tests, please wait", end="")
     for test in tests_data['tests']:
-        run_test(executable, test, tests_data['templates'], results)
+        run_test(executable, relative_workdir, test, tests_data['templates'], results)
         # Printing a dot after each test to make user aware of progress
         print(".", end="")
 

@@ -47,7 +47,7 @@ EXECUTABLE_INDEX = 1
 TESTS_JSON_FILE_INDEX = 2
 EXPECTED_ARGS_AMOUNT = 3
 
-HTML_COLORED_NEWLINE = '<span style="color: cyan;">\\n</span><br/>'
+HTML_COLORED_NEWLINE = '<span style="background-color: orange;">\\n</span><br/>'
 NORMAL_HTML_NEWLINE = '<br/>'
 
 TEST_NAME = 'name'

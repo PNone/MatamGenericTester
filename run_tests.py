@@ -220,7 +220,7 @@ def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
     return Summary(
         title=f"{test_name} - Failed due to an error in the tester!",
         expected=expected_output,
-        actual=exception,
+        error=exception,
     )
 
 

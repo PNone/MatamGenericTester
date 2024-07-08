@@ -3,8 +3,6 @@ from os import environ, getcwd, chdir
 from os.path import dirname, join, normpath
 import subprocess
 import json
-import re
-import difflib
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
 else:
@@ -62,11 +60,6 @@ TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
 
 
-def print_diff(string1, string2):
-    diff = difflib.ndiff(string1, string2)
-    return '<br/>'.join(diff)
-
-
 def simple_html_format(text: str) -> str:
     return text.replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
 
@@ -82,21 +75,6 @@ def format_test_string_for_html(field: str, field_title: str) -> str:
     return f'<p>{field_title}</p><p>{field}</p>'
 
 
-def replace_triangle_html(text: str) -> str:
-    # Replace < and > with &lt; and &gt;, except for <br/>
-    def replacement(match):
-        if match.group(0) == '<br/>':
-            return '<br/>'
-        else:
-            return match.group(0).replace('<', '&lt;').replace('>', '&gt;')
-
-    # This regex matches <, > and <br/>
-    pattern = re.compile(r'<br/>|<|>')
-
-    # Perform the replacement
-    return pattern.sub(replacement, text)
-
-
 def format_summary_for_html(summary: Summary) -> str:
     report = ''
     report += f'<p>{summary.get("title")}</p>'
@@ -110,18 +88,6 @@ def format_summary_for_html(summary: Summary) -> str:
     if actual:
         report += format_test_string_for_html(actual, 'Actual Output:')
 
-    # newline = '\n'
-    # fixed_triangle_brackets: str = replace_triangle_html(field)
-    # fixed_double_newline_brackets = fixed_triangle_brackets.replace(double_newline, html_double_newline)
-    # # If there are newlines between expected output and actual output, highlight them
-    # while '\nActual Output:' in fixed_double_newline_brackets:
-    #     fixed_double_newline_brackets.replace('\nActual Output:', f'{html_double_newline}Actual Output:')
-    # # If text ends with \n, highlight it
-    # if fixed_double_newline_brackets.endswith('\n'):
-    #     fixed_double_newline_brackets = fixed_double_newline_brackets[:-1] + html_double_newline
-
-    # return fixed_double_newline_brackets.replace(newline, NORMAL_HTML_NEWLINE)
-    # return fixed_triangle_brackets.replace(newline, NORMAL_HTML_NEWLINE)
     return report
 
 
@@ -141,7 +107,8 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
         command_element: str = f"<p>Test Command:</p><p>{simple_html_format(result['command'])}</p>" \
             if result.get('command', None) else ''
         html += f'''
-        <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">{result['name']}</button>
+        <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">
+        {result['name']}</button>
 <div class="content">
   {command_element}
   <p>{format_summary_for_html(result.get('summary'))}</p>
@@ -246,7 +213,6 @@ def summarize_failed_test(test_name: str, expected_output: str, actual_output: s
         expected=expected_output,
         actual=actual_output
     )
-    # return f"{NORMAL_HTML_NEWLINE}{test_name} - Failed!{NORMAL_HTML_NEWLINE}Expected Output:{NORMAL_HTML_NEWLINE}{NORMAL_HTML_NEWLINE}{expected_output}{NORMAL_HTML_NEWLINE}Actual Output:{NORMAL_HTML_NEWLINE}{NORMAL_HTML_NEWLINE}{actual_output}{NORMAL_HTML_NEWLINE}"
 
 
 def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
@@ -256,7 +222,6 @@ def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
         expected=expected_output,
         actual=exception,
     )
-    # return f"{NORMAL_HTML_NEWLINE}Expected Output:{NORMAL_HTML_NEWLINE}{expected_output}{NORMAL_HTML_NEWLINE}Error:{NORMAL_HTML_NEWLINE}{exception}{NORMAL_HTML_NEWLINE}"
 
 
 def summarize_failed_valgrind(test_name: str, exception: str) -> Summary:
@@ -264,7 +229,6 @@ def summarize_failed_valgrind(test_name: str, exception: str) -> Summary:
         title=f'{test_name} has leaks!{NORMAL_HTML_NEWLINE}Failed due to an error raised by valgrind!',
         error=exception
     )
-    # return f'{NORMAL_HTML_NEWLINE}{test_name} has leaks!{NORMAL_HTML_NEWLINE}Failed due to an error raised by valgrind!{NORMAL_HTML_NEWLINE}Error:{NORMAL_HTML_NEWLINE}{exception}{NORMAL_HTML_NEWLINE}'
 
 
 def execute_test(command: str, relative_workdir: str, name: str, expected_output: str, output_path: str,

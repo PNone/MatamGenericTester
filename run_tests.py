@@ -25,9 +25,16 @@ class TestFile(TypedDict):
     tests: list[TestCase]
 
 
+class Summary(TypedDict):
+    title: str
+    actual: str | None
+    expected: str | None
+    error: str | None
+
+
 class TestResult(TypedDict):
     name: str
-    summary: str
+    summary: Summary
     passed: bool
     command: str | None
 
@@ -40,6 +47,9 @@ EXECUTABLE_INDEX = 1
 TESTS_JSON_FILE_INDEX = 2
 EXPECTED_ARGS_AMOUNT = 3
 
+HTML_COLORED_NEWLINE = '<span style="background-color: orange;">\\n</span><br/>'
+NORMAL_HTML_NEWLINE = '<br/>'
+
 TEST_NAME = 'name'
 TEMPLATE_NAME = 'template'
 PARAMS = 'params'
@@ -50,11 +60,35 @@ TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
 
 
-def format_test_string_for_html(field: str) -> str:
-    newline = '\n'
+def simple_html_format(text: str) -> str:
+    return text.replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
+
+
+def format_test_string_for_html(field: str, field_title: str) -> str:
     less_than = '<'
     greater_than = '>'
-    return field.replace(less_than, '&lt;').replace(greater_than, '&gt;').replace(newline, '<br/>')
+    field = field.replace(less_than, '&lt;').replace(greater_than, '&gt;')
+    field = field.replace('\n\n', HTML_COLORED_NEWLINE)
+    if field.endswith('\n'):
+        field = field[:-1] + HTML_COLORED_NEWLINE
+    field = field.replace('\n', NORMAL_HTML_NEWLINE)
+    return f'<p>{field_title}</p><p>{field}</p>'
+
+
+def format_summary_for_html(summary: Summary) -> str:
+    report = ''
+    report += f'<p>{summary.get("title")}</p>'
+    expected: str = summary.get("expected")
+    if expected:
+        report += format_test_string_for_html(expected, 'Expected Output:')
+    error: str = summary.get("error")
+    if error:
+        report += format_test_string_for_html(error, 'Error:')
+    actual: str = summary.get("actual")
+    if actual:
+        report += format_test_string_for_html(actual, 'Actual Output:')
+
+    return report
 
 
 def generate_summary_html_content(results: list[TestResult]) -> str:
@@ -70,13 +104,14 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
 
     '''
     for result in results:
-        command_element: str = f"<p>Test Command:<br/>{format_test_string_for_html(result['command'])}</p>" \
+        command_element: str = f"<p>Test Command:</p><p>{simple_html_format(result['command'])}</p>" \
             if result.get('command', None) else ''
         html += f'''
-        <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">{result['name']}</button>
+        <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">
+        {result['name']}</button>
 <div class="content">
   {command_element}
-  <p>{format_test_string_for_html(result['summary'])}</p>
+  <p>{format_summary_for_html(result.get('summary'))}</p>
 </div>
 '''
 
@@ -172,17 +207,28 @@ def normalize_newlines(txt: str) -> str:
     return txt.replace('\r\n', '\n').replace('\r', '\n')
 
 
-def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> str:
-    return f"\n{test_name} - Failed!\nExpected Output:\n\n{expected_output}\nActual Output:\n\n{actual_output}\n"
+def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> Summary:
+    return Summary(
+        title=f"{test_name} - Failed!",
+        expected=expected_output,
+        actual=actual_output
+    )
 
 
 def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
-                                           exception: str) -> str:
-    return f"{test_name} - Failed due to an error in the tester!\nExpected Output:\n{expected_output}\nError:\n{exception}\n"
+                                           exception: str) -> Summary:
+    return Summary(
+        title=f"{test_name} - Failed due to an error in the tester!",
+        expected=expected_output,
+        error=exception,
+    )
 
 
-def summarize_failed_valgrind(test_name: str, exception: str) -> str:
-    return f'\n{test_name} has leaks!\n Failed due to an error raised by valgrind!\nError:\n{exception}\n'
+def summarize_failed_valgrind(test_name: str, exception: str) -> Summary:
+    return Summary(
+        title=f'{test_name} has leaks!{NORMAL_HTML_NEWLINE}Failed due to an error raised by valgrind!',
+        error=exception
+    )
 
 
 def execute_test(command: str, relative_workdir: str, name: str, expected_output: str, output_path: str,
@@ -235,7 +281,7 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
     if actual_output == expected_output:
         results.append({
             'name': name,
-            'summary': f"\n{name} - Passed!\n",
+            'summary': Summary(title=f"\n{name} - Passed!\n"),
             'passed': True
         })
     else:
@@ -292,7 +338,7 @@ def execute_valgrind_test(command: str, relative_workdir: str, name: str, result
     if 'no leaks are possible' in actual_output:
         results.append({
             'name': f'{name} - Valgrind',
-            'summary': f"\n{name} - no Leaks!\n",
+            'summary': Summary(title=f"\n{name} - no Leaks!\n"),
             'passed': True
         })
         return
@@ -312,7 +358,7 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
             name = test.get("name", "<missing>")
             results.append({
                 'name': name,
-                'summary': f"\nTest \"{name}\": \"{key}\" missing from test object\n",
+                'summary': Summary(title=f"\nTest \"{name}\": \"{key}\" missing from test object\n"),
                 'passed': False
             })
             return

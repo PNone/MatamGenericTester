@@ -68,7 +68,7 @@ def format_test_string_for_html(field: str, field_title: str) -> str:
     less_than = '<'
     greater_than = '>'
     field = field.replace(less_than, '&lt;').replace(greater_than, '&gt;')
-    field = field.replace('\n\n', HTML_COLORED_NEWLINE)
+    field = field.replace('\n\n', f'{HTML_COLORED_NEWLINE}{NORMAL_HTML_NEWLINE}')
     if field.endswith('\n'):
         field = field[:-1] + HTML_COLORED_NEWLINE
     field = field.replace('\n', NORMAL_HTML_NEWLINE)

@@ -3,6 +3,7 @@ from os import environ, getcwd, chdir
 from os.path import dirname, join, normpath
 import subprocess
 import json
+from platform import system
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
 else:
@@ -10,6 +11,10 @@ else:
 
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
+
+
+LEAKS_CHECKER_NAME = 'leaks' if system() == 'Darwin' else 'Valgrind'
+LEAKS_CHECKER_COMMAND = 'leaks --atExit --' if system() == 'Darwin' else 'valgrind --leak-check=full'
 
 
 class TestCase(TypedDict):
@@ -92,7 +97,6 @@ def format_summary_for_html(summary: Summary) -> str:
 
 
 def generate_summary_html_content(results: list[TestResult]) -> str:
-
     html = '''
 <!DOCTYPE html>
 <html>
@@ -224,9 +228,9 @@ def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
     )
 
 
-def summarize_failed_valgrind(test_name: str, exception: str) -> Summary:
+def summarize_failed_to_check_for_leaks(test_name: str, exception: str) -> Summary:
     return Summary(
-        title=f'{test_name} has leaks!{NORMAL_HTML_NEWLINE}Failed due to an error raised by valgrind!',
+        title=f'{test_name} has leaks!{NORMAL_HTML_NEWLINE}Failed due to an error raised by {LEAKS_CHECKER_NAME}!',
         error=exception
     )
 
@@ -293,7 +297,7 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
         })
 
 
-def execute_valgrind_test(command: str, relative_workdir: str, name: str, results: list[TestResult]) -> None:
+def execute_memory_leaks_test(command: str, relative_workdir: str, name: str, results: list[TestResult]) -> None:
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
                                 cwd=getcwd())
@@ -311,24 +315,24 @@ def execute_valgrind_test(command: str, relative_workdir: str, name: str, result
 
     except subprocess.CalledProcessError as e:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, e.stderr if e.stderr else e.stdout),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, e.stderr if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except subprocess.TimeoutExpired as e:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, str(e.stderr) if e.stderr else e.stdout),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except Exception as e:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, str(e)),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, str(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -337,15 +341,15 @@ def execute_valgrind_test(command: str, relative_workdir: str, name: str, result
 
     if 'no leaks are possible' in actual_output:
         results.append({
-            'name': f'{name} - Valgrind',
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
             'summary': Summary(title=f"\n{name} - no Leaks!\n"),
             'passed': True
         })
         return
     else:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, actual_output),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, actual_output),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -376,9 +380,9 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
 
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
-    valgrind_command: str = f'valgrind --leak-check=full {executable_path} {args}'
+    leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {executable_path} {args}'
     execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
-    execute_valgrind_test(valgrind_command, relative_workdir, name, results)
+    execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:

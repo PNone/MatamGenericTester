@@ -104,7 +104,7 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
 
     '''
     for result in results:
-        command_element: str = f"<p>Test Command:</p><p>{simple_html_format(result['command'])}</p>" \
+        command_element: str = f"<p>Test Command:</p><code>{simple_html_format(result['command'])}</code>" \
             if result.get('command', None) else ''
         html += f'''
         <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">

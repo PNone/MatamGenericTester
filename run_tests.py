@@ -207,27 +207,23 @@ def normalize_newlines(txt: str) -> str:
     return txt.replace('\r\n', '\n').replace('\r', '\n')
 
 
-def remove_out_pipes_from_command(command: str) -> str:
+def remove_error_pipes_from_command(command: str) -> str:
     """
-    If piping err and/or out to file, don't pipe it, and remove everything after the pipe operator
+    Avoid pipe of stderr to output file to allow leaks test to work as normal
     :param command:
     :return:
     """
-    command_without_out_pipe: str = command
-    index_of_err_pipe = command_without_out_pipe.find('2>')
+    command_without_err_pipe: str = command
+    index_of_err_pipe = command_without_err_pipe.rfind('2>')
+    index_of_out_pipe = command_without_err_pipe.rfind('>')
 
     if index_of_err_pipe != -1:
-        command_without_out_pipe = command_without_out_pipe[:index_of_err_pipe]
-    index_of_out_pipe = command_without_out_pipe.find('>')
-    if index_of_out_pipe != -1:
-        command_without_out_pipe = command_without_out_pipe[:index_of_out_pipe]
-    index_of_out_err_pipe = command_without_out_pipe.find('&>')
-    if index_of_out_err_pipe != -1:
-        command_without_out_pipe = command_without_out_pipe[:index_of_out_err_pipe]
+        if index_of_out_pipe > index_of_err_pipe:
+            command_without_err_pipe = command_without_err_pipe[:index_of_err_pipe] + command_without_err_pipe[index_of_out_pipe:]
+        else:
+            command_without_err_pipe = command_without_err_pipe[:index_of_err_pipe]
 
-    # Do not print output to stdout during leak testing
-    command_without_out_pipe += '> /dev/null'
-    return command_without_out_pipe
+    return command_without_err_pipe.replace('&>', '>')
 
 
 def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> Summary:
@@ -403,8 +399,8 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
 
-    command_without_pipes: str = remove_out_pipes_from_command(test_command)
-    valgrind_command: str = f'valgrind --leak-check=full {command_without_pipes}'
+    command_without_err_pipes: str = remove_error_pipes_from_command(test_command)
+    valgrind_command: str = f'valgrind --leak-check=full {command_without_err_pipes}'
     execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
     execute_valgrind_test(valgrind_command, relative_workdir, name, results)
 

@@ -404,7 +404,7 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
     test_command: str = f'{executable_path} {args}'
 
     command_without_pipes: str = remove_out_pipes_from_command(test_command)
-    valgrind_command: str = f'valgrind --leak-check=full {executable_path} {command_without_pipes}'
+    valgrind_command: str = f'valgrind --leak-check=full {command_without_pipes}'
     execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
     execute_valgrind_test(valgrind_command, relative_workdir, name, results)
 

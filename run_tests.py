@@ -376,6 +376,7 @@ def execute_valgrind_test(command: str, relative_workdir: str, name: str,
 def run_test(executable_path: str, relative_workdir: str, test: TestCase, templates: TestTemplates,
              results: list[TestResult]) -> None:
     for key, key_type in get_type_hints(TestCase).items():
+        # If key is missing and None is not a valid type for said key
         if key not in test and not isinstance(None, key_type.__args__):
             name = test.get("name", "<missing>")
             results.append({

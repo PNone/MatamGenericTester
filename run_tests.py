@@ -14,7 +14,8 @@ TestParams: TypeAlias = dict[str, str]
 
 
 LEAKS_CHECKER_NAME = 'leaks' if system() == 'Darwin' else 'Valgrind'
-LEAKS_CHECKER_COMMAND = 'leaks --atExit --' if system() == 'Darwin' else 'valgrind --leak-check=full '
+LEAKS_CHECKER_COMMAND = 'export MallocStackLogging=1 && leaks --atExit --' \
+    if system() == 'Darwin' else 'valgrind --leak-check=full '
 
 
 class TestCase(TypedDict):

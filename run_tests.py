@@ -7,7 +7,7 @@ import json
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
 else:
-    from typing import TypedDict, TypeAlias
+    from typing import TypedDict, TypeAlias, get_type_hints
 
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
@@ -19,6 +19,7 @@ class TestCase(TypedDict):
     params: TestParams
     output_file: str
     expected_output_file: str
+    run_leaks: bool | None
 
 
 class TestFile(TypedDict):
@@ -374,8 +375,9 @@ def execute_valgrind_test(command: str, relative_workdir: str, name: str,
 
 def run_test(executable_path: str, relative_workdir: str, test: TestCase, templates: TestTemplates,
              results: list[TestResult]) -> None:
-    for key in TestCase.__annotations__:
-        if key not in test:
+    for key, key_type in get_type_hints(TestCase).items():
+        # If key is missing and None is not a valid type for said key
+        if key not in test and not isinstance(None, key_type.__args__):
             name = test.get("name", "<missing>")
             results.append({
                 'name': name,
@@ -398,11 +400,11 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
 
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
-
-    command_without_err_pipes: str = remove_error_pipes_from_command(test_command)
-    valgrind_command: str = f'valgrind --leak-check=full {command_without_err_pipes}'
     execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
-    execute_valgrind_test(valgrind_command, relative_workdir, name, results)
+    if test.get("run_leaks") is not False:
+        command_without_err_pipes: str = remove_error_pipes_from_command(test_command)
+        valgrind_command: str = f'valgrind --leak-check=full {command_without_err_pipes}'
+        execute_valgrind_test(valgrind_command, relative_workdir, name, results)
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:

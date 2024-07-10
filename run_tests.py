@@ -14,7 +14,7 @@ TestParams: TypeAlias = dict[str, str]
 
 
 LEAKS_CHECKER_NAME = 'leaks' if system() == 'Darwin' else 'Valgrind'
-LEAKS_CHECKER_COMMAND = 'leaks --atExit --' if system() == 'Darwin' else 'valgrind --leak-check=full'
+LEAKS_CHECKER_COMMAND = 'leaks --atExit --' if system() == 'Darwin' else 'valgrind --leak-check=full '
 
 
 class TestCase(TypedDict):
@@ -380,7 +380,7 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
 
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
-    leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {executable_path} {args}'
+    leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND}{executable_path} {args}'
     execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
     execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
 

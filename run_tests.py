@@ -4,6 +4,7 @@ from os.path import dirname, join, normpath
 import subprocess
 import json
 from platform import system
+
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
 else:
@@ -85,13 +86,13 @@ def format_summary_for_html(summary: Summary) -> str:
     report = ''
     report += f'<p>{summary.get("title")}</p>'
     expected: str = summary.get("expected")
-    if expected:
+    if expected is not None:
         report += format_test_string_for_html(expected, 'Expected Output:')
     error: str = summary.get("error")
-    if error:
+    if error is not None:
         report += format_test_string_for_html(error, 'Error:')
     actual: str = summary.get("actual")
-    if actual:
+    if actual is not None:
         report += format_test_string_for_html(actual, 'Actual Output:')
 
     return report
@@ -212,6 +213,29 @@ def normalize_newlines(txt: str) -> str:
     return txt.replace('\r\n', '\n').replace('\r', '\n')
 
 
+def remove_out_pipes_from_command(command: str) -> str:
+    """
+    If piping err and/or out to file, don't pipe it, and remove everything after the pipe operator
+    :param command:
+    :return:
+    """
+    command_without_out_pipe: str = command
+    index_of_err_pipe = command_without_out_pipe.find('2>')
+
+    if index_of_err_pipe != -1:
+        command_without_out_pipe = command_without_out_pipe[:index_of_err_pipe]
+    index_of_out_pipe = command_without_out_pipe.find('>')
+    if index_of_out_pipe != -1:
+        command_without_out_pipe = command_without_out_pipe[:index_of_out_pipe]
+    index_of_out_err_pipe = command_without_out_pipe.find('&>')
+    if index_of_out_err_pipe != -1:
+        command_without_out_pipe = command_without_out_pipe[:index_of_out_err_pipe]
+
+    # Do not print output to stdout during leak testing
+    command_without_out_pipe += '> /dev/null'
+    return command_without_out_pipe
+
+
 def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> Summary:
     return Summary(
         title=f"{test_name} - Failed!",
@@ -236,7 +260,8 @@ def summarize_failed_to_check_for_leaks(test_name: str, exception: str) -> Summa
     )
 
 
-def execute_test(command: str, relative_workdir: str, name: str, expected_output: str, output_path: str,
+def execute_test(command: str, relative_workdir: str, name: str, expected_output: str,
+                 output_path: str,
                  results: list[TestResult]) -> None:
     try:
         with subprocess.Popen(command, shell=True, cwd=getcwd()) as proc:
@@ -298,7 +323,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
         })
 
 
-def execute_memory_leaks_test(command: str, relative_workdir: str, name: str, results: list[TestResult]) -> None:
+def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
+                          results: list[TestResult]) -> None:
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
                                 cwd=getcwd())
@@ -363,7 +389,8 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
             name = test.get("name", "<missing>")
             results.append({
                 'name': name,
-                'summary': Summary(title=f"\nTest \"{name}\": \"{key}\" missing from test object\n"),
+                'summary': Summary(
+                    title=f"\nTest \"{name}\": \"{key}\" missing from test object\n"),
                 'passed': False
             })
             return
@@ -381,7 +408,8 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
 
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
-    leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND}{executable_path} {args}'
+    command_without_pipes: str = remove_out_pipes_from_command(test_command)
+    leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND}{command_without_pipes}'
     execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
     execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
 

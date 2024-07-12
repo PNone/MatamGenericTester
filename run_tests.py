@@ -50,6 +50,7 @@ TESTS_JSON_FILE_INDEX = 2
 EXPECTED_ARGS_AMOUNT = 3
 
 HTML_COLORED_NEWLINE = '<span style="background-color: orange;">\\n</span><br/>'
+HTML_COLORED_WHITESPACE = '<span style="background-color: red;">&nbsp;</span>'
 NORMAL_HTML_NEWLINE = '<br/>'
 
 TEST_NAME = 'name'
@@ -70,9 +71,12 @@ def format_test_string_for_html(field: str, field_title: str) -> str:
     less_than = '<'
     greater_than = '>'
     field = field.replace(less_than, '&lt;').replace(greater_than, '&gt;')
+    field = field.replace(' \n', f'{HTML_COLORED_WHITESPACE}\n')
     field = field.replace('\n\n', f'{HTML_COLORED_NEWLINE}{NORMAL_HTML_NEWLINE}')
     if field.endswith('\n'):
         field = field[:-1] + HTML_COLORED_NEWLINE
+    if field.endswith(' '):
+        field = field[:-1] + HTML_COLORED_WHITESPACE
     field = field.replace('\n', NORMAL_HTML_NEWLINE)
     return f'<p>{field_title}</p><p>{field}</p>'
 
@@ -220,11 +224,14 @@ def remove_error_pipes_from_command(command: str) -> str:
 
     if index_of_err_pipe != -1:
         if index_of_out_pipe > index_of_err_pipe:
-            command_without_err_pipe = command_without_err_pipe[:index_of_err_pipe] + command_without_err_pipe[index_of_out_pipe:]
+            command_without_err_pipe = command_without_err_pipe[
+                                       :index_of_err_pipe] + command_without_err_pipe[
+                                                             index_of_out_pipe:]
         else:
             command_without_err_pipe = command_without_err_pipe[:index_of_err_pipe]
 
-    return command_without_err_pipe.replace('&>', '>')
+    # If stderr is piped to stdout, remove said piping
+    return command_without_err_pipe.replace('&>1', '>').replace('2>&1', '')
 
 
 def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> Summary:

@@ -3,6 +3,7 @@ from os import environ, getcwd, chdir
 from os.path import dirname, join, normpath
 import subprocess
 import json
+from platform import system
 
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
@@ -11,6 +12,14 @@ else:
 
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
+
+IS_MAC_OS = system() == 'Darwin'
+
+LEAKS_CHECKER_NAME = 'leaks' if IS_MAC_OS else 'Valgrind'
+LEAKS_CHECKER_COMMAND = 'export MallocStackLogging=1 && leaks --atExit --' \
+    if IS_MAC_OS else 'valgrind --leak-check=full'
+
+NO_LEAKS_FOUND_TEXT = '0 leaks for 0 total leaked bytes.' if IS_MAC_OS else 'no leaks are possible'
 
 
 class TestCase(TypedDict):
@@ -219,19 +228,33 @@ def remove_error_pipes_from_command(command: str) -> str:
     :return:
     """
     command_without_err_pipe: str = command
-    index_of_err_pipe = command_without_err_pipe.rfind('2>')
-    index_of_out_pipe = command_without_err_pipe.rfind('>')
-
-    if index_of_err_pipe != -1:
-        if index_of_out_pipe > index_of_err_pipe:
-            command_without_err_pipe = command_without_err_pipe[
-                                       :index_of_err_pipe] + command_without_err_pipe[
-                                                             index_of_out_pipe:]
-        else:
+    # macOs uses leaks which uses stdout, thus we need to undo the piping of it
+    if IS_MAC_OS:
+        index_of_out_pipe = command_without_err_pipe.rfind('>')
+        if index_of_out_pipe != -1:
+            command_without_err_pipe = command_without_err_pipe[:index_of_out_pipe]
+        index_of_err_out_pipe = command_without_err_pipe.rfind('&>')
+        if index_of_err_out_pipe != -1:
+            command_without_err_pipe = command_without_err_pipe[:index_of_err_out_pipe]
+        index_of_err_pipe = command_without_err_pipe.rfind('2>')
+        if index_of_err_pipe != -1:
             command_without_err_pipe = command_without_err_pipe[:index_of_err_pipe]
+        # If stderr is piped to stdout, remove said piping
+        return command_without_err_pipe.replace('&>1', '>').replace('2>&1', '')
+    else:
+        index_of_err_pipe = command_without_err_pipe.rfind('2>')
+        index_of_out_pipe = command_without_err_pipe.rfind('>')
 
-    # If stderr is piped to stdout, remove said piping
-    return command_without_err_pipe.replace('&>1', '>').replace('2>&1', '')
+        if index_of_err_pipe != -1:
+            if index_of_out_pipe > index_of_err_pipe:
+                command_without_err_pipe = command_without_err_pipe[
+                                           :index_of_err_pipe] + command_without_err_pipe[
+                                                                 index_of_out_pipe:]
+            else:
+                command_without_err_pipe = command_without_err_pipe[:index_of_err_pipe]
+
+        # If stderr is piped to stdout, remove said piping
+        return command_without_err_pipe.replace('&>1', '>').replace('2>&1', '')
 
 
 def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> Summary:
@@ -251,9 +274,9 @@ def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
     )
 
 
-def summarize_failed_valgrind(test_name: str, exception: str) -> Summary:
+def summarize_failed_to_check_for_leaks(test_name: str, exception: str) -> Summary:
     return Summary(
-        title=f'{test_name} has leaks!{NORMAL_HTML_NEWLINE}Failed due to an error raised by valgrind!',
+        title=f'{test_name} has leaks!{NORMAL_HTML_NEWLINE}Failed due to an error raised by {LEAKS_CHECKER_NAME}!',
         error=exception
     )
 
@@ -321,13 +344,14 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
         })
 
 
-def execute_valgrind_test(command: str, relative_workdir: str, name: str,
-                          results: list[TestResult]) -> None:
+def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
+                              results: list[TestResult]) -> None:
     try:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True,
                                 cwd=getcwd())
         try:
-            result = proc.communicate(timeout=VALGRIND_TIMEOUT)[STDERR]
+            proc_result = proc.communicate(timeout=VALGRIND_TIMEOUT)
+            result = proc_result[STDERR] if proc_result[STDERR] else proc_result[STDOUT]
         except subprocess.TimeoutExpired:
             proc.kill()
             result = proc.communicate()
@@ -340,41 +364,41 @@ def execute_valgrind_test(command: str, relative_workdir: str, name: str,
 
     except subprocess.CalledProcessError as e:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, e.stderr if e.stderr else e.stdout),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, e.stderr if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except subprocess.TimeoutExpired as e:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, str(e.stderr) if e.stderr else e.stdout),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
     except Exception as e:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, str(e)),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, str(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
 
         return
 
-    if 'no leaks are possible' in actual_output:
+    if NO_LEAKS_FOUND_TEXT in actual_output:
         results.append({
-            'name': f'{name} - Valgrind',
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
             'summary': Summary(title=f"\n{name} - no Leaks!\n"),
             'passed': True
         })
         return
     else:
         results.append({
-            'name': f'{name} - Valgrind',
-            'summary': summarize_failed_valgrind(name, actual_output),
+            'name': f'{name} - {LEAKS_CHECKER_NAME}',
+            'summary': summarize_failed_to_check_for_leaks(name, actual_output),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -410,8 +434,8 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
     execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
     if test.get("run_leaks") is not False:
         command_without_err_pipes: str = remove_error_pipes_from_command(test_command)
-        valgrind_command: str = f'valgrind --leak-check=full {command_without_err_pipes}'
-        execute_valgrind_test(valgrind_command, relative_workdir, name, results)
+        leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {command_without_err_pipes}'
+        execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:

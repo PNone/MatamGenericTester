@@ -87,12 +87,13 @@ def format_test_string_for_html(field: str, field_title: str) -> str:
     if field.endswith(' '):
         field = field[:-1] + HTML_COLORED_WHITESPACE
     field = field.replace('\n', NORMAL_HTML_NEWLINE)
-    return f'<p>{field_title}</p><p>{field}</p>'
+    return f'<div class="grid-child-element"><p>{field_title}</p><p>{field}</p></div>'
 
 
 def format_summary_for_html(summary: Summary) -> str:
     report = ''
     report += f'<p>{summary.get("title")}</p>'
+    report += '<div class="grid-container-element">'
     expected: str = summary.get("expected")
     if expected is not None:
         report += format_test_string_for_html(expected, 'Expected Output:')
@@ -102,11 +103,11 @@ def format_summary_for_html(summary: Summary) -> str:
     actual: str = summary.get("actual")
     if actual is not None:
         report += format_test_string_for_html(actual, 'Actual Output:')
-
+    report += '</div>'
     return report
 
 
-def generate_summary_html_content(results: list[TestResult]) -> str:
+def generate_summary_html_content(results: list[TestResult], amount_failed: int) -> str:
     html = '''
 <!DOCTYPE html>
 <html>
@@ -117,6 +118,7 @@ def generate_summary_html_content(results: list[TestResult]) -> str:
 
 
     '''
+    html += f'<h2><span style="color:red;">{amount_failed} Failed</span> out of {len(results)}</h2>'
     for result in results:
         command_element: str = f"<p>Test Command:</p><code>{simple_html_format(result['command'])}</code>" \
             if result.get('command', None) else ''
@@ -194,6 +196,18 @@ for (i = 0; i < coll.length; i++) {
   max-height: 0;
   overflow: hidden;
   transition: max-height 0.2s ease-out;
+}
+</style>
+<style>
+.grid-container-element { 
+    display: grid; 
+    grid-template-columns: 1fr 1fr; 
+    grid-gap: 20px; 
+    width: 80%; 
+} 
+.grid-child-element { 
+    margin: 10px; 
+    border: 1px solid red; 
 }
 </style>
 
@@ -492,7 +506,12 @@ def main():
     # Print new line to avoid console starting on same line as dots
     print("\n", end="")
 
-    html = generate_summary_html_content(results)
+    amount_failed = 0
+    for t in results:
+        if t.get('passed', False) is False:
+            amount_failed += 1
+
+    html = generate_summary_html_content(results, amount_failed)
     chdir(initial_workdir)
     create_html_report(html)
 

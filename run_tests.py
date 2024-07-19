@@ -305,7 +305,7 @@ def parse_test_placeholders(field: str, ranged_value: Any) -> str:
     return field.replace(':::placeholder:::', str(ranged_value))
 
 
-def parse_ranged_tests(tests: List[TestCase]) -> None:
+def parse_ranged_tests(tests: List[TestCase]) -> List[TestCase]:
     for index, test in enumerate(tests):
         test_range: TestParamRange | List[str] | None = test.get('params_range', None)
         if test_range:
@@ -321,18 +321,19 @@ def parse_ranged_tests(tests: List[TestCase]) -> None:
                     parsed_value = parse_test_placeholders(value, range_item)
                     parsed_params[name] = parsed_value
 
-                parsed_test = {
-                    'name': parse_test_placeholders(test['name'], range_item),
-                    'template': test['template'],
-                    'params': parsed_params,
-                    'output_file': parse_test_placeholders(test['output_file'], range_item),
-                    'expected_output_file': parse_test_placeholders(test['expected_output_file'], range_item),
-                    'run_leaks': test['run_leaks']
-                }
+                parsed_test = {'name': parse_test_placeholders(test['name'], range_item),
+                               'template': test['template'],
+                               'params': parsed_params,
+                               'output_file': parse_test_placeholders(test['output_file'],
+                                                                      range_item),
+                               'expected_output_file': parse_test_placeholders(
+                                   test['expected_output_file'], range_item),
+                               'run_leaks': test['run_leaks']
+                               }
                 tests.append(parsed_test)
 
     # Remove unparsed tests
-    tests = [test for test in tests if 'params_range' not in test]
+    return [test for test in tests if 'params_range' not in test]
 
 
 def execute_test(command: str, relative_workdir: str, name: str, expected_output: str,
@@ -419,7 +420,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
     except subprocess.CalledProcessError as e:
         results.append({
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
-            'summary': summarize_failed_to_check_for_leaks(name, e.stderr if e.stderr else e.stdout),
+            'summary': summarize_failed_to_check_for_leaks(name,
+                                                           e.stderr if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -427,7 +429,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
-            'summary': summarize_failed_to_check_for_leaks(name, str(e.stderr) if e.stderr else e.stdout),
+            'summary': summarize_failed_to_check_for_leaks(name,
+                                                           str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -537,7 +540,7 @@ def main():
     chdir(workdir)
 
     tests_data: TestFile = get_tests_data_from_json(tests_file_path)
-    parse_ranged_tests(tests_data['tests'])
+    tests_data['tests'] = parse_ranged_tests(tests_data['tests'])
     results: list[TestResult] = []
 
     print("Running tests, please wait", end="")

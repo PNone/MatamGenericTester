@@ -8,7 +8,7 @@ from platform import system
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
 else:
-    from typing import TypedDict, TypeAlias, get_type_hints
+    from typing import TypedDict, TypeAlias, get_type_hints, List, Any, Iterable
 
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
@@ -22,6 +22,11 @@ LEAKS_CHECKER_COMMAND = 'export MallocStackLogging=1 && leaks --atExit --' \
 NO_LEAKS_FOUND_TEXT = '0 leaks for 0 total leaked bytes.' if IS_MAC_OS else 'no leaks are possible'
 
 
+class TestParamRange(TypedDict):
+    first: int
+    last: int
+
+
 class TestCase(TypedDict):
     name: str
     template: str
@@ -29,6 +34,7 @@ class TestCase(TypedDict):
     output_file: str
     expected_output_file: str
     run_leaks: bool | None
+    params_range: TestParamRange | List[str] | None
 
 
 class TestFile(TypedDict):
@@ -295,6 +301,41 @@ def summarize_failed_to_check_for_leaks(test_name: str, exception: str) -> Summa
     )
 
 
+def parse_test_placeholders(field: str, ranged_value: Any) -> str:
+    return field.replace(':::placeholder:::', str(ranged_value))
+
+
+def parse_ranged_tests(tests: List[TestCase]) -> List[TestCase]:
+    for index, test in enumerate(tests):
+        test_range: TestParamRange | List[str] | None = test.get('params_range', None)
+        if test_range:
+            ranged_values: Iterable[Any]
+            if type(test_range) == dict:
+                ranged_values = range(test_range['first'], test_range['last'] + 1)
+            # In this case it will be a list of strs
+            else:
+                ranged_values = test_range
+            for range_item in ranged_values:
+                parsed_params: TestParams = dict()
+                for name, value in test['params'].items():
+                    parsed_value = parse_test_placeholders(value, range_item)
+                    parsed_params[name] = parsed_value
+
+                parsed_test = {'name': parse_test_placeholders(test['name'], range_item),
+                               'template': test['template'],
+                               'params': parsed_params,
+                               'output_file': parse_test_placeholders(test['output_file'],
+                                                                      range_item),
+                               'expected_output_file': parse_test_placeholders(
+                                   test['expected_output_file'], range_item),
+                               'run_leaks': test['run_leaks']
+                               }
+                tests.append(parsed_test)
+
+    # Remove unparsed tests
+    return [test for test in tests if 'params_range' not in test]
+
+
 def execute_test(command: str, relative_workdir: str, name: str, expected_output: str,
                  output_path: str,
                  results: list[TestResult]) -> None:
@@ -379,7 +420,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
     except subprocess.CalledProcessError as e:
         results.append({
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
-            'summary': summarize_failed_to_check_for_leaks(name, e.stderr if e.stderr else e.stdout),
+            'summary': summarize_failed_to_check_for_leaks(name,
+                                                           e.stderr if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -387,7 +429,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
-            'summary': summarize_failed_to_check_for_leaks(name, str(e.stderr) if e.stderr else e.stdout),
+            'summary': summarize_failed_to_check_for_leaks(name,
+                                                           str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -421,6 +464,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
 def run_test(executable_path: str, relative_workdir: str, test: TestCase, templates: TestTemplates,
              results: list[TestResult]) -> None:
     for key, key_type in get_type_hints(TestCase).items():
+        if key == 'params_range':
+            continue
         # If key is missing and None is not a valid type for said key
         if key not in test and not isinstance(None, key_type.__args__):
             name = test.get("name", "<missing>")
@@ -495,6 +540,7 @@ def main():
     chdir(workdir)
 
     tests_data: TestFile = get_tests_data_from_json(tests_file_path)
+    tests_data['tests'] = parse_ranged_tests(tests_data['tests'])
     results: list[TestResult] = []
 
     print("Running tests, please wait", end="")

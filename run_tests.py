@@ -380,9 +380,18 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
         })
         return
 
-    # norm path makes sure the path is formatted correctly
-    with open(normpath(output_path), "r", encoding='utf-8') as file:
-        actual_output = normalize_newlines(file.read())
+    try:
+        # norm path makes sure the path is formatted correctly
+        with open(normpath(output_path), "r", encoding='utf-8') as file:
+            actual_output = normalize_newlines(file.read())
+    except UnicodeDecodeError as e:
+        results.append({
+            'name': name,
+            'summary': summarize_failed_test_due_to_exception(name, expected_output, f'Test printed invalid output. Exception: {str(e)}'),
+            'passed': False,
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+        })
+        return
 
     if actual_output == expected_output:
         results.append({

@@ -328,7 +328,7 @@ def parse_ranged_tests(tests: List[TestCase]) -> List[TestCase]:
                                                                       range_item),
                                'expected_output_file': parse_test_placeholders(
                                    test['expected_output_file'], range_item),
-                               'run_leaks': test['run_leaks']
+                               'run_leaks': test.get('run_leaks', None)
                                }
                 tests.append(parsed_test)
 

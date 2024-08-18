@@ -241,6 +241,14 @@ def normalize_newlines(txt: str) -> str:
     return txt.replace('\r\n', '\n').replace('\r', '\n')
 
 
+def test_exception_to_error_text(exception: Exception) -> str:
+    if exception.stderr:
+        return str(exception.stderr)
+    if exception.stdout:
+        return str(exception.stdout)
+    return str(exception)
+
+
 def remove_error_pipes_from_command(command: str) -> str:
     """
     Avoid pipe of stderr to output file to allow leaks test to work as normal
@@ -347,8 +355,7 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
                 proc.kill()
                 results.append({
                     'name': name,
-                    'summary': summarize_failed_test_due_to_exception(name, expected_output,
-                                                                      str(e.stderr) if e.stderr else e.stdout),
+                    'summary': summarize_failed_test_due_to_exception(name, expected_output, test_exception_to_error_text(e)),
                     'passed': False,
                     'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
                 })
@@ -356,8 +363,7 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
     except subprocess.CalledProcessError as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output,
-                                                              e.stderr if e.stderr else e.stdout),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output, test_exception_to_error_text(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -365,8 +371,7 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output,
-                                                              str(e.stderr) if e.stderr else e.stdout),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output, test_exception_to_error_text(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -429,8 +434,7 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
     except subprocess.CalledProcessError as e:
         results.append({
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
-            'summary': summarize_failed_to_check_for_leaks(name,
-                                                           e.stderr if e.stderr else e.stdout),
+            'summary': summarize_failed_to_check_for_leaks(name, test_exception_to_error_text(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -438,8 +442,7 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
-            'summary': summarize_failed_to_check_for_leaks(name,
-                                                           str(e.stderr) if e.stderr else e.stdout),
+            'summary': summarize_failed_to_check_for_leaks(name, test_exception_to_error_text(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })

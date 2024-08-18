@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Comic+Neue:wght@400;700&display=swap');
+
+html,
+body {
+  font: normal 14px/1.4 sans-serif;
+  background: #f1f1f1;
+}
+
+h4 {
+  font-family: 'Comic Neue', cursive;
+  font-weight: 700;
+  font-size: 26px;
+}
+
+p {
+  margin: 0 0 1rem;
+  font-family: 'Comic Neue', cursive;
+  font-weight: 400;
+  font-size: 20px;
+}
+
+p.bold {
+  font-weight: 700;
+}
+
+.blockquote {
+      background: rgb(188 188 188 / 30%);
+    border-left: 3px solid black;
+    padding: 0 15px;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+table td {
+  border: 1px solid #ccc;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  margin: 1rem;
+  padding: 1rem;
+}
+
+.card .card {
+  margin: 0;
+  flex: 1 0 0;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  margin-right: -8px;
+}
+
+.col {
+  display: flex;
+  flex: 1 0 0;
+  flex-direction: column;
+  margin-right: 8px;
+}
+
+.current-document ins {
+  background: lightgreen;
+  text-decoration: none;
+}
+
+.current-document del {
+  background: pink;
+}
+
+.system-generated del {
+  visibility: hidden;
+}
+
+.system-generated ins {
+  text-decoration: none;
+}
+
+.system-generated ins ~ del {
+  display: none;
+}

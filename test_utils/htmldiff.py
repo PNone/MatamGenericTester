@@ -544,24 +544,37 @@ table td {
   margin-right: 8px;
 }
 
-.current-document ins {
+.actual ins {
   background: lightgreen;
   text-decoration: none;
 }
 
-.current-document del {
+.actual del {
   background: pink;
 }
 
-.system-generated del {
+.expected del {
   visibility: hidden;
 }
 
-.system-generated ins {
+.expected ins {
   text-decoration: none;
 }
 
-.system-generated ins ~ del {
+.expected ins ~ del {
   display: none;
 }
 """
+
+
+def generate_diff_js_for_elements(html1: str, html2: str, elemend_id: int) -> str:
+    return f'''
+    {{
+    // Diff HTML strings
+let output = htmldiff(`{html1}`, `{html2}`);
+let input = htmldiff(`{html2}`, `{html1}`);
+// Show HTML diff output as HTML!
+document.getElementById("expected{elemend_id}").innerHTML = output;
+document.getElementById("actual{elemend_id}").innerHTML = input;
+    }}
+    '''

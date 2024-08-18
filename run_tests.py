@@ -4,11 +4,13 @@ from os.path import dirname, join, normpath
 import subprocess
 import json
 from platform import system
+from test_utils import htmldiff
+from random import randint
 
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
 else:
-    from typing import TypedDict, TypeAlias, get_type_hints, List, Any, Iterable
+    from typing import TypedDict, TypeAlias, get_type_hints, List, Any, Iterable, Tuple
 
 TestTemplates: TypeAlias = dict[str, str]
 TestParams: TypeAlias = dict[str, str]
@@ -54,6 +56,7 @@ class TestResult(TypedDict):
     summary: Summary
     passed: bool
     command: str | None
+    memory: bool
 
 
 # Define constants
@@ -82,6 +85,10 @@ def simple_html_format(text: str) -> str:
     return text.replace('<', '&lt;').replace('>', '&gt;').replace('\n', '<br/>')
 
 
+def format_test_string_for_html_diff(field_title: str, element_id: str, class_name: str) -> str:
+    return f'<div class="{class_name}"><p>{field_title}</p><p id={element_id}></p></div>'
+
+
 def format_test_string_for_html(field: str, field_title: str) -> str:
     less_than = '<'
     greater_than = '>'
@@ -96,19 +103,31 @@ def format_test_string_for_html(field: str, field_title: str) -> str:
     return f'<div class="grid-child-element"><p>{field_title}</p><p>{field}</p></div>'
 
 
-def format_summary_for_html(summary: Summary) -> str:
+def format_summary_for_html(summary: Summary, html_diff_replacement_js: List[str]) -> str:
     report = ''
     report += f'<p>{summary.get("title")}</p>'
     report += '<div class="grid-container-element">'
-    expected: str = summary.get("expected")
-    if expected is not None:
-        report += format_test_string_for_html(expected, 'Expected Output:')
     error: str = summary.get("error")
-    if error is not None:
-        report += format_test_string_for_html(error, 'Error:')
+    expected: str = summary.get("expected")
     actual: str = summary.get("actual")
-    if actual is not None:
-        report += format_test_string_for_html(actual, 'Actual Output:')
+    use_diff: bool = expected and actual and not error
+    element_id = randint(1, 1_000_000)
+    ids: Tuple[str, str, int] = (f"expected{element_id}", f"actual{element_id}", element_id)
+    if use_diff:
+        expected_html = simple_html_format(expected)
+        report += format_test_string_for_html_diff('Expected Output:', ids[0], 'expected')
+        actual_html = simple_html_format(actual)
+        report += format_test_string_for_html_diff('Actual Output:', ids[1], 'actual')
+        highlight_script = htmldiff.generate_diff_js_for_elements(expected_html, actual_html, ids[2])
+        html_diff_replacement_js.append(highlight_script)
+
+    else:
+        if expected is not None:
+            report += format_test_string_for_html(expected, 'Expected Output:')
+        if error is not None:
+            report += format_test_string_for_html(error, 'Error:')
+        if actual is not None:
+            report += format_test_string_for_html(actual, 'Actual Output:')
     report += '</div>'
     return report
 
@@ -125,6 +144,7 @@ def generate_summary_html_content(results: list[TestResult], amount_failed: int)
 
     '''
     html += f'<h2><span style="color:red;">{amount_failed} Failed</span> out of {len(results)}</h2>'
+    html_diff_replacement_js = []
     for result in results:
         command_element: str = f"<p>Test Command:</p><code>{simple_html_format(result['command'])}</code>" \
             if result.get('command', None) else ''
@@ -133,9 +153,11 @@ def generate_summary_html_content(results: list[TestResult], amount_failed: int)
         {result['name']}</button>
 <div class="content">
   {command_element}
-  <p>{format_summary_for_html(result.get('summary'))}</p>
+  <p>{format_summary_for_html(result.get('summary'), html_diff_replacement_js)}</p>
 </div>
 '''
+
+    highlight_script: str = ' '.join(html_diff_replacement_js)
 
     html += '''
 </body>
@@ -232,6 +254,13 @@ for (i = 0; i < coll.length; i++) {
     }
   });
 }
+</script>
+    '''
+    html += f'<style>{htmldiff.CSS}</style>'
+    html += f'''
+    <script>
+    {htmldiff.JAVASCRIPT}
+    {highlight_script}
 </script>
     '''
     return html
@@ -350,7 +379,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
                     'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                                       str(e.stderr) if e.stderr else e.stdout),
                     'passed': False,
-                    'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+                    'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+                    'memory': False
                 })
                 return
     except subprocess.CalledProcessError as e:
@@ -359,7 +389,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
             'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                               e.stderr if e.stderr else e.stdout),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': False
         })
         return
     except subprocess.TimeoutExpired as e:
@@ -368,7 +399,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
             'summary': summarize_failed_test_due_to_exception(name, expected_output,
                                                               str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': False
         })
         return
     except Exception as e:
@@ -376,7 +408,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
             'name': name,
             'summary': summarize_failed_test_due_to_exception(name, expected_output, str(e)),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': False
         })
         return
 
@@ -389,7 +422,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
             'name': name,
             'summary': summarize_failed_test_due_to_exception(name, expected_output, f'Test printed invalid output. Exception: {str(e)}'),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': False
         })
         return
 
@@ -397,14 +431,16 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
         results.append({
             'name': name,
             'summary': Summary(title=f"\n{name} - Passed!\n"),
-            'passed': True
+            'passed': True,
+            'memory': False
         })
     else:
         results.append({
             'name': name,
             'summary': summarize_failed_test(name, expected_output, actual_output),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': False
         })
 
 
@@ -432,7 +468,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
             'summary': summarize_failed_to_check_for_leaks(name,
                                                            e.stderr if e.stderr else e.stdout),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': True
         })
         return
     except subprocess.TimeoutExpired as e:
@@ -441,7 +478,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
             'summary': summarize_failed_to_check_for_leaks(name,
                                                            str(e.stderr) if e.stderr else e.stdout),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': True
         })
         return
     except Exception as e:
@@ -449,7 +487,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
             'summary': summarize_failed_to_check_for_leaks(name, str(e)),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': True
         })
 
         return
@@ -458,7 +497,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
         results.append({
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
             'summary': Summary(title=f"\n{name} - no Leaks!\n"),
-            'passed': True
+            'passed': True,
+            'memory': True
         })
         return
     else:
@@ -466,7 +506,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
             'name': f'{name} - {LEAKS_CHECKER_NAME}',
             'summary': summarize_failed_to_check_for_leaks(name, actual_output),
             'passed': False,
-            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD',
+            'memory': True
         })
 
 
@@ -482,7 +523,8 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
                 'name': name,
                 'summary': Summary(
                     title=f"\nTest \"{name}\": \"{key}\" missing from test object\n"),
-                'passed': False
+                'passed': False,
+                'memory': True
             })
             return
 

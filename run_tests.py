@@ -1,5 +1,5 @@
 import sys
-from os import environ, getcwd, chdir
+from os import environ, getcwd, chdir, linesep
 from os.path import dirname, join, normpath
 import subprocess
 import json
@@ -60,8 +60,8 @@ class TestResult(TypedDict):
 STDOUT = 0
 STDERR = 1
 
-EXECUTABLE_INDEX = 1
-TESTS_JSON_FILE_INDEX = 2
+TESTS_JSON_FILE_INDEX = 1
+EXECUTABLE_INDEX = 2
 EXPECTED_ARGS_AMOUNT = 3
 
 HTML_COLORED_NEWLINE = '<span style="background-color: orange;">\\n</span><br/>'
@@ -76,6 +76,9 @@ EXPECTED_OUTPUT_FILE = 'expected_output_file'
 
 TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
+
+COMPARISON_TRIM_END_SPACES = int(environ.get('MATAM_TESTER_TRIMR_SPACES', '0'))
+COMPARISON_IGNORE_BLANK_LINES = int(environ.get('MATAM_TESTER_IGNORE_EMPTY_LINES', '0'))
 
 
 def simple_html_format(text: str) -> str:
@@ -355,7 +358,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
                 proc.kill()
                 results.append({
                     'name': name,
-                    'summary': summarize_failed_test_due_to_exception(name, expected_output, test_exception_to_error_text(e)),
+                    'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                                      test_exception_to_error_text(e)),
                     'passed': False,
                     'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
                 })
@@ -392,11 +396,20 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
     except UnicodeDecodeError as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output, f'Test printed invalid output. Exception: {str(e)}'),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                              f'Test printed invalid output. Exception: {str(e)}'),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
+
+    if COMPARISON_IGNORE_BLANK_LINES != 0:
+        actual_output = linesep.join([s for s in actual_output.splitlines() if s])
+        expected_output = linesep.join([s for s in expected_output.splitlines() if s])
+
+    if COMPARISON_TRIM_END_SPACES != 0:
+        actual_output = linesep.join([s.rstrip() for s in actual_output.splitlines()])
+        expected_output = linesep.join([s.rstrip() for s in expected_output.splitlines()])
 
     if actual_output == expected_output:
         results.append({
@@ -533,8 +546,8 @@ def create_html_report(html: str) -> None:
 
 
 def main():
-    # Expect 3 args: script name, executable path, json path
-    if len(sys.argv) != EXPECTED_ARGS_AMOUNT:
+    # Expect 3 at least args: script name, json path, executable path (may comprise multiple args if command is complex)
+    if len(sys.argv) < EXPECTED_ARGS_AMOUNT:
         print(
             f"Bad Usage of local tester, make sure executable path and json test file's path are passed properly." +
             f" Total args passed: {len(sys.argv)}"
@@ -543,8 +556,11 @@ def main():
 
     initial_workdir = getcwd()
 
-    # norm path makes sure the path is formatted correctly
-    executable = normpath(join(initial_workdir, sys.argv[EXECUTABLE_INDEX]))
+    # Build executable. May include multiple inputs, any input that comes beginning in EXECUTABLE_INDEX
+    executable = ''
+    for i in range(EXECUTABLE_INDEX, len(sys.argv)):
+        # norm path makes sure the path is formatted correctly
+        executable += ' ' + normpath(join(initial_workdir, sys.argv[i]))
     tests_file_path = normpath(join(initial_workdir, sys.argv[TESTS_JSON_FILE_INDEX]))
 
     workdir = dirname(tests_file_path)

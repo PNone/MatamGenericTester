@@ -33,7 +33,7 @@ class TestCase(TypedDict):
     params: TestParams
     output_file: str
     expected_output_file: str
-    expected_output_contains: bool | None
+    expected_output_is_substring: bool | None
     run_leaks: bool | None
     params_range: TestParamRange | List[str] | None
 
@@ -74,7 +74,7 @@ TEMPLATE_NAME = 'template'
 PARAMS = 'params'
 OUTPUT_FILE = 'output_file'
 EXPECTED_OUTPUT_FILE = 'expected_output_file'
-EXPECTED_OUTPUT_CONTAINS = 'expected_output_contains'
+EXPECTED_OUTPUT_IS_SUBSTR = 'expected_output_is_substring'
 
 TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
@@ -341,7 +341,7 @@ def parse_ranged_tests(tests: List[TestCase]) -> List[TestCase]:
                     'output_file': parse_test_placeholders(test['output_file'], range_item),
                     EXPECTED_OUTPUT_FILE: parse_test_placeholders(test[EXPECTED_OUTPUT_FILE], range_item),
                     'run_leaks': test.get('run_leaks', None),
-                    EXPECTED_OUTPUT_CONTAINS: test.get(EXPECTED_OUTPUT_CONTAINS, False)
+                    EXPECTED_OUTPUT_IS_SUBSTR: test.get(EXPECTED_OUTPUT_IS_SUBSTR, False)
                 }
 
                 tests.append(parsed_test)
@@ -516,7 +516,7 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
 
     name: str = test[TEST_NAME]
     expected_output_path = test.get(EXPECTED_OUTPUT_FILE, None)
-    expected_is_substr: bool = test.get(EXPECTED_OUTPUT_CONTAINS, False)
+    expected_is_substr: bool = test.get(EXPECTED_OUTPUT_IS_SUBSTR, False)
     # norm path makes sure the path is formatted correctly
     with open(normpath(expected_output_path), "r", encoding='utf-8') as file:
         expected_output = normalize_newlines(file.read())

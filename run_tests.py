@@ -32,8 +32,8 @@ class TestCase(TypedDict):
     template: str
     params: TestParams
     output_file: str
-    expected_output_file: str | None
-    expected_output_contains: str | None
+    expected_output_file: str
+    expected_output_contains: bool | None
     run_leaks: bool | None
     params_range: TestParamRange | List[str] | None
 
@@ -334,16 +334,15 @@ def parse_ranged_tests(tests: List[TestCase]) -> List[TestCase]:
                     parsed_value = parse_test_placeholders(value, range_item)
                     parsed_params[name] = parsed_value
 
-                parsed_test = {'name': parse_test_placeholders(test['name'], range_item),
-                               'template': test['template'],
-                               'params': parsed_params,
-                               'output_file': parse_test_placeholders(test['output_file'],
-                                                                      range_item),
-                               'run_leaks': test.get('run_leaks', None)
-                               }
-                for key in (EXPECTED_OUTPUT_FILE, EXPECTED_OUTPUT_CONTAINS):
-                    if key in test:
-                        parsed_test[key] = parse_test_placeholders(test[key], range_item)
+                parsed_test = {
+                    'name': parse_test_placeholders(test['name'], range_item),
+                    'template': test['template'],
+                    'params': parsed_params,
+                    'output_file': parse_test_placeholders(test['output_file'], range_item),
+                    EXPECTED_OUTPUT_FILE: parse_test_placeholders(test[EXPECTED_OUTPUT_FILE], range_item),
+                    'run_leaks': test.get('run_leaks', None),
+                    EXPECTED_OUTPUT_CONTAINS: test.get(EXPECTED_OUTPUT_CONTAINS, False)
+                }
 
                 tests.append(parsed_test)
 
@@ -499,9 +498,6 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
     for key, key_type in get_type_hints(TestCase).items():
         if key == 'params_range':
             continue
-        if ((key == EXPECTED_OUTPUT_FILE and EXPECTED_OUTPUT_CONTAINS in test)
-                or (key == EXPECTED_OUTPUT_CONTAINS and EXPECTED_OUTPUT_FILE in test)):
-            continue
 
         # If key is missing and None is not a valid type for said key
         if key not in test and not isinstance(None, key_type.__args__):
@@ -520,15 +516,10 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
 
     name: str = test[TEST_NAME]
     expected_output_path = test.get(EXPECTED_OUTPUT_FILE, None)
-    expected_output = test.get(EXPECTED_OUTPUT_CONTAINS, None)
-    expected_is_substr: bool = True
-    # Prefer expected output contains condition.
-    # If no expected contains, then we must have output file
-    if not expected_output:
-        expected_is_substr = False
-        # norm path makes sure the path is formatted correctly
-        with open(normpath(expected_output_path), "r", encoding='utf-8') as file:
-            expected_output = normalize_newlines(file.read())
+    expected_is_substr: bool = test.get(EXPECTED_OUTPUT_CONTAINS, False)
+    # norm path makes sure the path is formatted correctly
+    with open(normpath(expected_output_path), "r", encoding='utf-8') as file:
+        expected_output = normalize_newlines(file.read())
 
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'

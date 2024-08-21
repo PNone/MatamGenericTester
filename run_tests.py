@@ -405,11 +405,22 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
         return
+    except FileNotFoundError as e:
+        results.append({
+            'name': name,
+            'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                              f'Test failed to provide output. Exception: {str(e)}'),
+            'passed': False,
+            'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
+        })
+        return
 
+    # Remove blank lines
     if COMPARISON_IGNORE_BLANK_LINES != 0:
         actual_output = linesep.join([s for s in actual_output.splitlines() if s])
         expected_output = linesep.join([s for s in expected_output.splitlines() if s])
 
+    # Trim spaces from end of lines
     if COMPARISON_TRIM_END_SPACES != 0:
         actual_output = linesep.join([s.rstrip() for s in actual_output.splitlines()])
         expected_output = linesep.join([s.rstrip() for s in expected_output.splitlines()])

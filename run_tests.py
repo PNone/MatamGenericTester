@@ -32,7 +32,8 @@ class TestCase(TypedDict):
     template: str
     params: TestParams
     output_file: str
-    expected_output_file: str
+    expected_output_file: str | None
+    expected_output_contains: str | None
     run_leaks: bool | None
     params_range: TestParamRange | List[str] | None
 
@@ -73,6 +74,7 @@ TEMPLATE_NAME = 'template'
 PARAMS = 'params'
 OUTPUT_FILE = 'output_file'
 EXPECTED_OUTPUT_FILE = 'expected_output_file'
+EXPECTED_OUTPUT_CONTAINS = 'expected_output_contains'
 
 TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
@@ -337,10 +339,12 @@ def parse_ranged_tests(tests: List[TestCase]) -> List[TestCase]:
                                'params': parsed_params,
                                'output_file': parse_test_placeholders(test['output_file'],
                                                                       range_item),
-                               'expected_output_file': parse_test_placeholders(
-                                   test['expected_output_file'], range_item),
                                'run_leaks': test.get('run_leaks', None)
                                }
+                for key in (EXPECTED_OUTPUT_FILE, EXPECTED_OUTPUT_CONTAINS):
+                    if key in test:
+                        parsed_test[key] = parse_test_placeholders(test[key], range_item)
+
                 tests.append(parsed_test)
 
     # Remove unparsed tests
@@ -349,7 +353,7 @@ def parse_ranged_tests(tests: List[TestCase]) -> List[TestCase]:
 
 def execute_test(command: str, relative_workdir: str, name: str, expected_output: str,
                  output_path: str,
-                 results: list[TestResult]) -> None:
+                 results: list[TestResult], expected_is_substr: bool = False) -> None:
     try:
         with subprocess.Popen(command, shell=True, cwd=getcwd()) as proc:
             try:
@@ -411,7 +415,11 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
         actual_output = linesep.join([s.rstrip() for s in actual_output.splitlines()])
         expected_output = linesep.join([s.rstrip() for s in expected_output.splitlines()])
 
-    if actual_output == expected_output:
+    compare_result: bool = actual_output == expected_output
+    if expected_is_substr:
+        compare_result = expected_output in actual_output
+
+    if compare_result:
         results.append({
             'name': name,
             'summary': Summary(title=f"\n{name} - Passed!\n"),
@@ -491,6 +499,10 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
     for key, key_type in get_type_hints(TestCase).items():
         if key == 'params_range':
             continue
+        if ((key == EXPECTED_OUTPUT_FILE and EXPECTED_OUTPUT_CONTAINS in test)
+                or (key == EXPECTED_OUTPUT_CONTAINS and EXPECTED_OUTPUT_FILE in test)):
+            continue
+
         # If key is missing and None is not a valid type for said key
         if key not in test and not isinstance(None, key_type.__args__):
             name = test.get("name", "<missing>")
@@ -507,15 +519,21 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
         args = args.replace(f':::{param_name}:::', param_value)
 
     name: str = test[TEST_NAME]
-    expected_output_path = test[EXPECTED_OUTPUT_FILE]
-
-    # norm path makes sure the path is formatted correctly
-    with open(normpath(expected_output_path), "r", encoding='utf-8') as file:
-        expected_output = normalize_newlines(file.read())
+    expected_output_path = test.get(EXPECTED_OUTPUT_FILE, None)
+    expected_output = test.get(EXPECTED_OUTPUT_CONTAINS, None)
+    expected_is_substr: bool = True
+    # Prefer expected output contains condition.
+    # If no expected contains, then we must have output file
+    if not expected_output:
+        expected_is_substr = False
+        # norm path makes sure the path is formatted correctly
+        with open(normpath(expected_output_path), "r", encoding='utf-8') as file:
+            expected_output = normalize_newlines(file.read())
 
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
-    execute_test(test_command, relative_workdir, name, expected_output, output_path, results)
+    execute_test(test_command, relative_workdir, name,
+                 expected_output, output_path, results, expected_is_substr=expected_is_substr)
     if test.get("run_leaks") is not False:
         command_without_err_pipes: str = remove_error_pipes_from_command(test_command)
         leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {command_without_err_pipes}'

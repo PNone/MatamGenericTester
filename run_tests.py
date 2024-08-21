@@ -415,10 +415,12 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
         })
         return
 
+    # Remove blank lines
     if COMPARISON_IGNORE_BLANK_LINES != 0:
         actual_output = linesep.join([s for s in actual_output.splitlines() if s])
         expected_output = linesep.join([s for s in expected_output.splitlines() if s])
 
+    # Trim spaces from end of lines
     if COMPARISON_TRIM_END_SPACES != 0:
         actual_output = linesep.join([s.rstrip() for s in actual_output.splitlines()])
         expected_output = linesep.join([s.rstrip() for s in expected_output.splitlines()])

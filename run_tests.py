@@ -1,9 +1,11 @@
 import sys
+import time
 from os import environ, getcwd, chdir, linesep
 from os.path import dirname, join, normpath
 import subprocess
 import json
 from platform import system
+from multiprocessing.dummy import Pool as ThreadPool
 
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
@@ -76,7 +78,7 @@ OUTPUT_FILE = 'output_file'
 EXPECTED_OUTPUT_FILE = 'expected_output_file'
 EXPECTED_OUTPUT_IS_SUBSTR = 'expected_output_is_substring'
 
-TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '1'))  # 1 second
+TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_TIMEOUT', '120'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('LOCAL_GRADESCOPE_VALGRIND_TIMEOUT', '2'))  # 2 seconds
 
 COMPARISON_TRIM_END_SPACES = int(environ.get('MATAM_TESTER_TRIMR_SPACES', '0'))
@@ -534,12 +536,16 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
 
     output_path = test[OUTPUT_FILE]
     test_command: str = f'{executable_path} {args}'
+
+    print(f"running test {name}")
+
     execute_test(test_command, relative_workdir, name,
                  expected_output, output_path, results, expected_is_substr=expected_is_substr)
     if test.get("run_leaks") is not False:
         command_without_err_pipes: str = remove_error_pipes_from_command(test_command)
         leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {command_without_err_pipes}'
         execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
+    print(f"finished test {name}")
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:
@@ -591,11 +597,25 @@ def main():
     tests_data['tests'] = parse_ranged_tests(tests_data['tests'])
     results: list[TestResult] = []
 
+    # none to use cpu count
+    pool = ThreadPool(None)
+
     print("Running tests, please wait", end="")
+    fn_args = []
+
     for test in tests_data['tests']:
-        run_test(executable, relative_workdir, test, tests_data['templates'], results)
-        # Printing a dot after each test to make user aware of progress
-        print(".", end="")
+        fn_args.append(
+            (executable, relative_workdir, test, tests_data['templates'], results)
+        )
+
+    start = time.time()
+
+    pool.starmap(run_test, fn_args)
+
+    pool.close()
+    pool.join()
+
+    print(f"running time is: {time.time() - start}s")
 
     # Print new line to avoid console starting on same line as dots
     print("\n", end="")

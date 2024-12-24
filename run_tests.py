@@ -606,7 +606,7 @@ def main():
             (executable, relative_workdir, test, tests_data['templates'], results)
         )
 
-    if RUN_MULTI_THREAD == 1 :
+    if RUN_MULTI_THREAD == 1:
         # none to use cpu count
         pool = ThreadPool(None)
 

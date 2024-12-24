@@ -545,7 +545,7 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
         leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {command_without_err_pipes}'
         execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
     # Printing a dot after each test to make user aware of progress
-    print(".", end="")
+    print(".", end="", flush=True)
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:
@@ -597,7 +597,7 @@ def main():
     tests_data['tests'] = parse_ranged_tests(tests_data['tests'])
     results: list[TestResult] = []
 
-    print("Running tests, please wait", end="")
+    print("Running tests, please wait", end="", flush=True)
     fn_args = []
 
     for test in tests_data['tests']:
@@ -618,7 +618,7 @@ def main():
             run_test(*args)
 
     # Print new line to avoid console starting on same line as dots
-    print("\n", end="")
+    print("\n", end="", flush=True)
 
     amount_failed = 0
     for t in results:

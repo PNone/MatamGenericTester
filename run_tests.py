@@ -1,5 +1,4 @@
 import sys
-from itertools import starmap
 from os import environ, getcwd, chdir, linesep
 from os.path import dirname, join, normpath
 import subprocess
@@ -615,7 +614,8 @@ def main():
         pool.close()
         pool.join()
     else:
-        starmap(run_test, fn_args)
+        for args in fn_args:
+            run_test(*args)
 
     # Print new line to avoid console starting on same line as dots
     print("\n", end="")

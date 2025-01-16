@@ -76,6 +76,8 @@ PARAMS = 'params'
 OUTPUT_FILE = 'output_file'
 EXPECTED_OUTPUT_FILE = 'expected_output_file'
 EXPECTED_OUTPUT_IS_SUBSTR = 'expected_output_is_substring'
+TEMP_REPORT = 'test_results_current.html'
+FINAL_REPORT = 'test_results.html'
 
 TIMEOUT = int(environ.get('MATAM_TESTER_TEST_TIMEOUT', '1'))  # 1 second
 VALGRIND_TIMEOUT = int(environ.get('MATAM_TESTER_VALGRIND_TIMEOUT', '2'))  # 2 seconds
@@ -83,7 +85,8 @@ VALGRIND_TIMEOUT = int(environ.get('MATAM_TESTER_VALGRIND_TIMEOUT', '2'))  # 2 s
 COMPARISON_TRIM_END_SPACES = int(environ.get('MATAM_TESTER_TRIMR_SPACES', '0'))
 COMPARISON_IGNORE_BLANK_LINES = int(environ.get('MATAM_TESTER_IGNORE_EMPTY_LINES', '0'))
 
-RUN_MULTI_THREAD = int(environ.get('MATAM_TESTER_RUN_MULTI_THREADED', '0'))
+RUN_MULTI_THREAD = int(environ.get('MATAM_TESTER_RUN_MULTI_THREADED', '0')) == 1
+EXPORT_TEMP_REPORT = int(environ.get('MATAM_TESTER_EXPORT_TEMP_REPORT', '0')) == 1
 
 
 def simple_html_format(text: str) -> str:
@@ -507,7 +510,7 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
         })
 
 
-def run_test(executable_path: str, relative_workdir: str, test: TestCase, templates: TestTemplates,
+def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, test: TestCase, templates: TestTemplates,
              results: list[TestResult]) -> None:
     for key, key_type in get_type_hints(TestCase).items():
         if key == 'params_range':
@@ -546,6 +549,8 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
         execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
     # Printing a dot after each test to make user aware of progress
     print(".", end="", flush=True)
+    if EXPORT_TEMP_REPORT and not RUN_MULTI_THREAD:
+        create_html_report_from_results(results, initial_workdir, TEMP_REPORT)
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:
@@ -561,14 +566,27 @@ def get_tests_data_from_json(tests_file_path: str) -> TestFile:
         raise e
 
 
-def create_html_report(html: str) -> None:
+def create_html_report(html: str, html_name: str) -> None:
     try:
-        with open('test_results.html', "w", encoding='utf-8') as file:
+        with open(html_name, "w", encoding='utf-8') as file:
             file.write(html)
     except Exception as e:
         print('Could not create html report. Report content:')
         print(html)
         raise e
+
+
+def create_html_report_from_results(results: list[TestResult], initial_workdir: str, html_name: str) -> None:
+    amount_failed: int = 0
+    for t in results:
+        if t.get('passed', False) is False:
+            amount_failed += 1
+
+    html: str = generate_summary_html_content(results, amount_failed)
+    curr_workdir: str = getcwd()
+    chdir(initial_workdir)
+    create_html_report(html, html_name)
+    chdir(curr_workdir)
 
 
 def main():
@@ -602,10 +620,10 @@ def main():
 
     for test in tests_data['tests']:
         fn_args.append(
-            (executable, relative_workdir, test, tests_data['templates'], results)
+            (executable, relative_workdir, initial_workdir, test, tests_data['templates'], results)
         )
 
-    if RUN_MULTI_THREAD == 1:
+    if RUN_MULTI_THREAD:
         # none to use cpu count
         pool = ThreadPool(None)
 
@@ -619,15 +637,8 @@ def main():
 
     # Print new line to avoid console starting on same line as dots
     print("\n", end="", flush=True)
-
-    amount_failed = 0
-    for t in results:
-        if t.get('passed', False) is False:
-            amount_failed += 1
-
-    html = generate_summary_html_content(results, amount_failed)
+    create_html_report_from_results(results, initial_workdir, FINAL_REPORT)
     chdir(initial_workdir)
-    create_html_report(html)
 
 
 if __name__ == "__main__":

@@ -121,130 +121,6 @@ def format_summary_for_html(summary: Summary) -> str:
     return report
 
 
-def generate_summary_html_content(results: list[TestResult], amount_failed: int) -> str:
-    html = '''
-<!DOCTYPE html>
-<html>
-<head>
-
-</head>
-<body>
-
-
-    '''
-    html += f'<h2><span style="color:red;">{amount_failed} Failed</span> out of {len(results)}</h2>'
-    for result in results:
-        command_element: str = f"<p>Test Command:</p><code>{simple_html_format(result['command'])}</code>" \
-            if result.get('command', None) else ''
-        html += f'''
-        <button type="button" class="collapsible" style="color:{'green' if result['passed'] else 'red'}">
-        {result['name']}</button>
-<div class="content">
-  {command_element}
-  <p>{format_summary_for_html(result.get('summary'))}</p>
-</div>
-'''
-
-    html += '''
-</body>
-</html>'''
-
-    html += '''
-<script>
-var coll = document.getElementsByClassName("collapsible");
-var i;
-
-for (i = 0; i < coll.length; i++) {
-  coll[i].addEventListener("click", function() {
-    this.classList.toggle("active");
-    var content = this.nextElementSibling;
-    if (content.style.display === "block") {
-      content.style.display = "none";
-    } else {
-      content.style.display = "block";
-    }
-  });
-}
-</script>
-<style>
-.collapsible {
-  background-color: #eee;
-  color: #444;
-  cursor: pointer;
-  padding: 18px;
-  width: 100%;
-  border: none;
-  text-align: left;
-  outline: none;
-  font-size: 15px;
-}
-
-/* Add a background color to the button if it is clicked on (add the .active class with JS), and when you move the mouse over it (hover) */
-.active, .collapsible:hover {
-  background-color: #ccc;
-}
-
-/* Style the collapsible content. Note: hidden by default */
-.content {
-  padding: 0 18px;
-  display: none;
-  overflow: hidden;
-  background-color: #f1f1f1;
-}
-.collapsible:after {
-  content: '\\02795'; /* Unicode character for "plus" sign (+) */
-  font-size: 13px;
-  color: white;
-  float: right;
-  margin-left: 5px;
-}
-
-.active:after {
-  content: "\\2796"; /* Unicode character for "minus" sign (-) */
-}
-</style>
-<style>
-.content {
-  padding: 0 18px;
-  background-color: white;
-  max-height: 0;
-  overflow: hidden;
-  transition: max-height 0.2s ease-out;
-}
-</style>
-<style>
-.grid-container-element { 
-    display: grid; 
-    grid-template-columns: 1fr 1fr; 
-    grid-gap: 20px; 
-    width: 80%; 
-} 
-.grid-child-element { 
-    margin: 10px; 
-    border: 1px solid red; 
-}
-</style>
-
-<script>
-var coll = document.getElementsByClassName("collapsible");
-var i;
-
-for (i = 0; i < coll.length; i++) {
-  coll[i].addEventListener("click", function() {
-    this.classList.toggle("active");
-    var content = this.nextElementSibling;
-    if (content.style.maxHeight){
-      content.style.maxHeight = null;
-    } else {
-      content.style.maxHeight = content.scrollHeight + "px";
-    }
-  });
-}
-</script>
-    '''
-    return html
-
-
 def normalize_newlines(txt: str) -> str:
     return txt.replace('\r\n', '\n').replace('\r', '\n')
 
@@ -545,7 +421,7 @@ def run_test(executable_path: str, relative_workdir: str, test: TestCase, templa
         leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {command_without_err_pipes}'
         execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
     # Printing a dot after each test to make user aware of progress
-    print(".", end="", flush=True)
+    print(".", end="")
 
 
 def get_tests_data_from_json(tests_file_path: str) -> TestFile:
@@ -561,15 +437,74 @@ def get_tests_data_from_json(tests_file_path: str) -> TestFile:
         raise e
 
 
-def create_html_report(html: str) -> None:
-    try:
-        with open('test_results.html', "w", encoding='utf-8') as file:
-            file.write(html)
-    except Exception as e:
-        print('Could not create html report. Report content:')
-        print(html)
-        raise e
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+import logging
 
+def serve_results_file_paths(results_file_paths, host='localhost', port=8000):
+    """
+    Serves a list of results_file_paths as JSON over localhost with CORS enabled.
+
+    Args:
+        results_file_paths: A list of file paths.
+        host: Hostname for the server (default: 'localhost').
+        port: Port number for the server (default: 8000).
+    """
+
+    class MyServer(BaseHTTPRequestHandler):
+        def end_headers(self):
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Access-Control-Allow-Methods', 'GET')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+            BaseHTTPRequestHandler.end_headers(self)
+
+        def do_GET(self):
+            if self.path == '/results':
+                try:
+                    self.send_response(200)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps(results_file_paths).encode())
+                except Exception as e:
+                    logging.exception("Error serving results:")
+                    self.send_error(500, "Internal Server Error")
+            else:
+                self.send_error(404, "Not Found")
+
+    with HTTPServer((host, port), MyServer) as web_server:
+        print(f"Server started http://{host}:{port}")
+        try:
+            web_server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            print("Server stopped.")
+
+def duplicate_list(results, num_duplicates=10):
+    """
+    Duplicates each item in the given list 'num_duplicates' times.
+
+    Args:
+      results: The list to be duplicated.
+      num_duplicates: The number of times to duplicate each item (default: 10).
+
+    Returns:
+      A new list containing the duplicated items.
+    """
+    duplicated_results = []
+    for item in results:
+        duplicated_results.extend([item])
+    for item in results:
+        duplicated_results.extend([item])
+    for item in results:
+        duplicated_results.extend([item])
+    for item in results:
+        duplicated_results.extend([item])
+    for item in results:
+        duplicated_results.extend([item])
+    for item in results:
+        duplicated_results.extend([item])
+    return duplicated_results
 
 def main():
     # Expect 3 at least args: script name, json path, executable path (may comprise multiple args if command is complex)
@@ -597,7 +532,7 @@ def main():
     tests_data['tests'] = parse_ranged_tests(tests_data['tests'])
     results: list[TestResult] = []
 
-    print("Running tests, please wait", end="", flush=True)
+    print("Running tests, please wait", end="")
     fn_args = []
 
     for test in tests_data['tests']:
@@ -618,16 +553,21 @@ def main():
             run_test(*args)
 
     # Print new line to avoid console starting on same line as dots
-    print("\n", end="", flush=True)
+    print("\n", end="")
 
     amount_failed = 0
     for t in results:
         if t.get('passed', False) is False:
             amount_failed += 1
 
-    html = generate_summary_html_content(results, amount_failed)
-    chdir(initial_workdir)
-    create_html_report(html)
+    # # Dump results to a JSON file instead of creating an HTML report
+    # results_file_path = normpath(join(initial_workdir, 'test_results.json'))  # Specify the output JSON file path
+    # with open(results_file_path, 'w', encoding='utf-8') as json_file:
+    #     json.dump(results, json_file, ensure_ascii=False, indent=4)  # Write results to JSON file
+
+    # print(f"Results have been dumped to {results_file_path}")  # Inform the user about the output file
+
+    serve_results_file_paths(duplicate_list(results))
 
 
 if __name__ == "__main__":

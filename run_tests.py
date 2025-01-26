@@ -6,6 +6,8 @@ import json
 from platform import system
 from multiprocessing.dummy import Pool as ThreadPool
 
+from utils.loading_bar import print_progress_bar
+
 if sys.version_info < (3, 10):
     sys.exit("Python %s.%s or later is required.\n" % (3, 10))
 else:
@@ -511,7 +513,7 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
 
 
 def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, test: TestCase, templates: TestTemplates,
-             results: list[TestResult]) -> None:
+             results: list[TestResult], total_tests: int) -> None:
     for key, key_type in get_type_hints(TestCase).items():
         if key == 'params_range':
             continue
@@ -525,6 +527,7 @@ def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, 
                     title=f"\nTest \"{name}\": \"{key}\" missing from test object\n"),
                 'passed': False
             })
+            print_progress_bar(len(results), total_tests, prefix='Progress:', suffix='Complete', length=50)
             return
 
     args: str = templates[test[TEMPLATE_NAME]]
@@ -547,8 +550,8 @@ def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, 
         command_without_err_pipes: str = remove_error_pipes_from_command(test_command)
         leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {command_without_err_pipes}'
         execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
-    # Printing a dot after each test to make user aware of progress
-    print(".", end="", flush=True)
+    # Advancing progress bar
+    print_progress_bar(len(results), total_tests, prefix='Progress:', suffix='Complete', length=50)
     if EXPORT_TEMP_REPORT and not RUN_MULTI_THREAD:
         create_html_report_from_results(results, initial_workdir, TEMP_REPORT)
 
@@ -618,9 +621,17 @@ def main():
     print("Running tests, please wait", end="", flush=True)
     fn_args = []
 
+    total_tests: int = 0
+    for test in tests_data['tests']:
+        if test.get('run_leaks', False):
+            total_tests += 2
+        else:
+            total_tests += 1
+
+    print_progress_bar(0, total_tests, prefix='Progress:', suffix='Complete', length=50)
     for test in tests_data['tests']:
         fn_args.append(
-            (executable, relative_workdir, initial_workdir, test, tests_data['templates'], results)
+            (executable, relative_workdir, initial_workdir, test, tests_data['templates'], results, total_tests)
         )
 
     if RUN_MULTI_THREAD:
@@ -635,7 +646,7 @@ def main():
         for args in fn_args:
             run_test(*args)
 
-    # Print new line to avoid console starting on same line as dots
+    # Print new line to avoid console starting on same line as the loading bar
     print("\n", end="", flush=True)
     create_html_report_from_results(results, initial_workdir, FINAL_REPORT)
     chdir(initial_workdir)

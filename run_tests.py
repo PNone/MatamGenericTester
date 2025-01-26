@@ -527,6 +527,7 @@ def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, 
                     title=f"\nTest \"{name}\": \"{key}\" missing from test object\n"),
                 'passed': False
             })
+            print_progress_bar(len(results), total_tests, prefix='Progress:', suffix='Complete', length=50)
             return
 
     args: str = templates[test[TEMPLATE_NAME]]

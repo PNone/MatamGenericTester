@@ -513,7 +513,7 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
 
 
 def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, test: TestCase, templates: TestTemplates,
-             results: list[TestResult], test_index: int, total_tests: int) -> None:
+             results: list[TestResult], total_tests: int) -> None:
     for key, key_type in get_type_hints(TestCase).items():
         if key == 'params_range':
             continue
@@ -550,7 +550,7 @@ def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, 
         leaks_check_command: str = f'{LEAKS_CHECKER_COMMAND} {command_without_err_pipes}'
         execute_memory_leaks_test(leaks_check_command, relative_workdir, name, results)
     # Advancing progress bar
-    print_progress_bar(test_index + 1, total_tests, prefix='Progress:', suffix='Complete', length=50)
+    print_progress_bar(len(results), total_tests, prefix='Progress:', suffix='Complete', length=50)
     if EXPORT_TEMP_REPORT and not RUN_MULTI_THREAD:
         create_html_report_from_results(results, initial_workdir, TEMP_REPORT)
 
@@ -620,11 +620,17 @@ def main():
     print("Running tests, please wait", end="", flush=True)
     fn_args = []
 
-    total_tests: int = len(tests_data['tests'])
+    total_tests: int = 0
+    for test in tests_data['tests']:
+        if test.get('run_leaks', False):
+            total_tests += 2
+        else:
+            total_tests += 1
+
     print_progress_bar(0, total_tests, prefix='Progress:', suffix='Complete', length=50)
-    for test_index, test in enumerate(tests_data['tests']):
+    for test in tests_data['tests']:
         fn_args.append(
-            (executable, relative_workdir, initial_workdir, test, tests_data['templates'], results, test_index, total_tests)
+            (executable, relative_workdir, initial_workdir, test, tests_data['templates'], results, total_tests)
         )
 
     if RUN_MULTI_THREAD:

@@ -265,7 +265,8 @@ def main():
 
     total_tests: int = 0
     for test in tests_data['tests']:
-        if test.get('run_leaks', False):
+        # Default for run_leaks is true (for example, if not specified/defined)
+        if test.get('run_leaks', True):
             total_tests += 2
         else:
             total_tests += 1

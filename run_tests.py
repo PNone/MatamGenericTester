@@ -1,19 +1,23 @@
 import sys
 from os import getcwd, chdir, linesep
-from os.path import dirname, join, normpath
+from os.path import dirname, join, normpath, isfile, isdir
 import subprocess
 import json
 
 from multiprocessing.dummy import Pool as ThreadPool
 
-from utils.config import RUN_MULTI_THREAD, FINAL_REPORT, EXECUTABLE_INDEX, TESTS_JSON_FILE_INDEX, EXPECTED_ARGS_AMOUNT, \
-    TIMEOUT, COMPARISON_IGNORE_BLANK_LINES, COMPARISON_TRIM_END_SPACES, VALGRIND_TIMEOUT, STDERR, STDOUT, \
+from utils.config import RUN_MULTI_THREAD, FINAL_REPORT, EXECUTABLE_INDEX, TESTS_JSON_FILE_INDEX, \
+    EXPECTED_ARGS_AMOUNT, \
+    TIMEOUT, COMPARISON_IGNORE_BLANK_LINES, COMPARISON_TRIM_END_SPACES, VALGRIND_TIMEOUT, STDERR, \
+    STDOUT, \
     LEAKS_CHECKER_NAME, NO_LEAKS_FOUND_TEXT, TEMPLATE_NAME, PARAMS, TEST_NAME, EXPECTED_OUTPUT_FILE, \
     EXPECTED_OUTPUT_IS_SUBSTR, OUTPUT_FILE, EXPORT_TEMP_REPORT, LEAKS_CHECKER_COMMAND, TEMP_REPORT
 from utils.loading_bar import print_progress_bar
 from utils.matam_html import create_html_report_from_results
-from utils.matam_parsing import summarize_failed_test_due_to_exception, test_exception_to_error_text, \
-    normalize_newlines, summarize_failed_test, summarize_failed_to_check_for_leaks, remove_error_pipes_from_command, \
+from utils.matam_parsing import summarize_failed_test_due_to_exception, \
+    test_exception_to_error_text, \
+    normalize_newlines, summarize_failed_test, summarize_failed_to_check_for_leaks, \
+    remove_error_pipes_from_command, \
     parse_ranged_tests
 from utils.matam_types import TestResult, TestFile, Summary, TestCase, TestTemplates
 
@@ -35,7 +39,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
                 results.append({
                     'name': name,
                     'summary': summarize_failed_test_due_to_exception(name, expected_output,
-                                                                      test_exception_to_error_text(e)),
+                                                                      test_exception_to_error_text(
+                                                                          e)),
                     'passed': False,
                     'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
                 })
@@ -43,7 +48,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
     except subprocess.CalledProcessError as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output, test_exception_to_error_text(e)),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                              test_exception_to_error_text(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -51,7 +57,8 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
     except subprocess.TimeoutExpired as e:
         results.append({
             'name': name,
-            'summary': summarize_failed_test_due_to_exception(name, expected_output, test_exception_to_error_text(e)),
+            'summary': summarize_failed_test_due_to_exception(name, expected_output,
+                                                              test_exception_to_error_text(e)),
             'passed': False,
             'command': f'export TESTER_TMP_PWD=$(pwd) && cd {relative_workdir} && {command} && cd $TESTER_TMP_PWD && unset TESTER_TMP_PWD'
         })
@@ -177,7 +184,8 @@ def execute_memory_leaks_test(command: str, relative_workdir: str, name: str,
         })
 
 
-def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, test: TestCase, templates: TestTemplates,
+def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, test: TestCase,
+             templates: TestTemplates,
              results: list[TestResult], total_tests: int) -> None:
     for key, key_type in get_type_hints(TestCase).items():
         if key == 'params_range':
@@ -192,7 +200,8 @@ def run_test(executable_path: str, relative_workdir: str, initial_workdir: str, 
                     title=f"\nTest \"{name}\": \"{key}\" missing from test object\n"),
                 'passed': False
             })
-            print_progress_bar(len(results), total_tests, prefix='Progress:', suffix='Complete', length=50)
+            print_progress_bar(len(results), total_tests, prefix='Progress:', suffix='Complete',
+                               length=50)
             return
 
     args: str = templates[test[TEMPLATE_NAME]]
@@ -245,11 +254,21 @@ def main():
 
     initial_workdir = getcwd()
 
-    # Build executable. May include multiple inputs, any input that comes beginning in EXECUTABLE_INDEX
+    # If EXECUTABLE_INDEX is a file, wrap it in ' so it works even with spaces in path
     executable = ''
-    for i in range(EXECUTABLE_INDEX, len(sys.argv)):
-        # norm path makes sure the path is formatted correctly
-        executable += ' ' + normpath(join(initial_workdir, sys.argv[i]))
+    exec_path = normpath(join(initial_workdir, sys.argv[EXECUTABLE_INDEX]))
+    if isfile(exec_path):
+        executable = f"'{exec_path}'"
+
+    # Build executable. May include multiple inputs, any input that comes beginning in EXECUTABLE_INDEX
+    if len(sys.argv) > EXPECTED_ARGS_AMOUNT:
+        for i in range(EXECUTABLE_INDEX + 1, len(sys.argv)):
+            # norm path makes sure the path is formatted correctly
+            # If arg is a file or a dir, wrap it in ' in case it contains a space
+            curr_arg = normpath(join(initial_workdir, sys.argv[i]))
+            if isfile(curr_arg) or isdir(curr_arg):
+                curr_arg = f"'{curr_arg}'"
+            executable += ' ' + curr_arg
     tests_file_path = normpath(join(initial_workdir, sys.argv[TESTS_JSON_FILE_INDEX]))
 
     workdir = dirname(tests_file_path)
@@ -274,7 +293,8 @@ def main():
     print_progress_bar(0, total_tests, prefix='Progress:', suffix='Complete', length=50)
     for test in tests_data['tests']:
         fn_args.append(
-            (executable, relative_workdir, initial_workdir, test, tests_data['templates'], results, total_tests)
+            (executable, relative_workdir, initial_workdir, test, tests_data['templates'], results,
+             total_tests)
         )
 
     if RUN_MULTI_THREAD:

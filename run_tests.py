@@ -255,10 +255,11 @@ def main():
     initial_workdir = getcwd()
 
     # If EXECUTABLE_INDEX is a file, wrap it in ' so it works even with spaces in path
-    executable = ''
     exec_path = normpath(join(initial_workdir, sys.argv[EXECUTABLE_INDEX]))
     if isfile(exec_path):
         executable = f"'{exec_path}'"
+    else:
+        executable = exec_path
 
     # Build executable. May include multiple inputs, any input that comes beginning in EXECUTABLE_INDEX
     if len(sys.argv) > EXPECTED_ARGS_AMOUNT:

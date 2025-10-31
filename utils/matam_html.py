@@ -1,8 +1,9 @@
 from utils.config import NORMAL_HTML_NEWLINE, HTML_COLORED_NEWLINE, HTML_COLORED_WHITESPACE, USE_OLD_DIFF_STYLE
 from utils.matam_types import Summary, TestResult
 from os import getcwd, chdir
-import html
-import difflib
+if not USE_OLD_DIFF_STYLE:
+    import html
+    import difflib
 
 
 def simple_html_format(text: str) -> str:

@@ -13,7 +13,7 @@ from utils.config import RUN_MULTI_THREAD, FINAL_REPORT, EXECUTABLE_INDEX, TESTS
     LEAKS_CHECKER_NAME, NO_LEAKS_FOUND_TEXT, TEMPLATE_NAME, PARAMS, TEST_NAME, EXPECTED_OUTPUT_FILE, \
     EXPECTED_OUTPUT_IS_SUBSTR, OUTPUT_FILE, EXPORT_TEMP_REPORT, LEAKS_CHECKER_COMMAND, TEMP_REPORT
 from utils.loading_bar import print_progress_bar
-from utils.matam_html import create_html_report_from_results, generate_html_diff
+from utils.matam_html import create_html_report_from_results, generate_side_by_side_diff
 from utils.matam_parsing import summarize_failed_test_due_to_exception, \
     test_exception_to_error_text, \
     normalize_newlines, summarize_failed_test, summarize_failed_to_check_for_leaks, \
@@ -116,7 +116,7 @@ def execute_test(command: str, relative_workdir: str, name: str, expected_output
             'passed': True
         })
     else:
-        diff_html = generate_html_diff(expected_output, actual_output, name)
+        diff_html = generate_side_by_side_diff(expected_output, actual_output, name)
         results.append({
             'name': name,
             'summary': summarize_failed_test(name, expected_output, actual_output, diff_html),

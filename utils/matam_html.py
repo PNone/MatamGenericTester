@@ -29,7 +29,7 @@ def format_summary_for_html(summary: Summary) -> str:
     # If there’s a pre-rendered diff HTML, include it directly (no escaping)
     diff_html: str = summary.get("diff_html")
     error: str = summary.get("error")
-    if not USE_OLD_DIFF_STYLE and diff_html is not None and error is not None:
+    if not USE_OLD_DIFF_STYLE and diff_html is not None and error is None:
         report += f'<div class="diff-wrapper">{diff_html}</div>'
         return report  # Skip the standard grid in this case
 
@@ -52,7 +52,7 @@ def generate_summary_html_content(results: list[TestResult], amount_failed: int)
 <!DOCTYPE html>
 <html>
 <head>
-
+    <meta charset="utf-8">
 </head>
 <body>
 
@@ -76,19 +76,39 @@ def generate_summary_html_content(results: list[TestResult], amount_failed: int)
 </html>'''
 
     # Style for highlighting invisibles
-    html += """
+    html += '''
         <style>
-            table.diff { border-collapse: collapse; font-family: monospace; font-size: 13px; }
-            td, th { padding: 2px 6px; vertical-align: top; border: 1px solid #ddd; }
-            .diff_add { background: #c6efce; }  /* green */
-            .diff_sub { background: #ffc7ce; }  /* red */
-            .diff_chg { background: #ffeb9c; }  /* yellow */
-            .ws  { color: #999; background-color: #f5f5f5; }
-            .tab { color: #3b82f6; }
-            .cr  { color: #dc2626; font-weight: bold; }
-            .nl  { color: #16a34a; }
+        .diff-container {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-bottom: 1em;
+        }
+        .diff-column {
+            padding: 6px;
+        }
+        .diff-header {
+            background: #f0f0f0;
+            font-weight: bold;
+            padding: 4px;
+            text-align: center;
+            border-bottom: 1px solid #ddd;
+        }
+        .line {
+            padding: 1px 4px;
+        }
+        .line.keep { background: none; }
+        .line.added { background: #bfe4ca; color: #22863a; }
+        .line.removed { background: #ffeef0; color: #cb2431; }
+        .line.empty { background: #f9f9f9; color: #aaa; }
         </style>
-        """
+        '''
 
     html += '''
 <script>
@@ -208,27 +228,68 @@ def create_html_report_from_results(results: list[TestResult], initial_workdir: 
     chdir(curr_workdir)
 
 
-def _highlight_whitespace_chars(s: str) -> str:
-    s = s.replace(" ", '<span class="ws">·</span>')
-    s = s.replace("\t", '<span class="tab">→</span>')
-    s = s.replace("\r", '<span class="cr">␍</span>')
-    s = s.replace("\n", '<span class="nl">⏎</span>\n')
+def _mark_invisibles(s: str) -> str:
+    s = html.escape(s)
+    s = (
+        s.replace(" ", '·')
+        .replace("\t", '→')
+        .replace("\r", '␍')
+        .replace("\n", '⏎')
+    )
     return s
 
+def generate_side_by_side_diff(expected_output: str, actual_output: str, test_name: str) -> str:
+    """
+    Generate a clean, side-by-side HTML diff view (Expected | Actual)
+    with visible whitespace, tabs, CR/LF, and colored differences.
+    """
 
-def generate_html_diff(expected_output: str, actual_output: str, test_name: str) -> str:
-    """Return an HTML diff string highlighting invisible chars distinctly."""
-    expected_html = _highlight_whitespace_chars(html.escape(expected_output))
-    actual_html = _highlight_whitespace_chars(html.escape(actual_output))
+    # Keep newline characters so we can highlight missing/extra ones
+    expected_lines = expected_output.splitlines(keepends=True)
+    actual_lines = actual_output.splitlines(keepends=True)
 
-    expected_lines = expected_html.splitlines(keepends=True)
-    actual_lines = actual_html.splitlines(keepends=True)
+    differ = difflib.Differ()
+    diff = list(differ.compare(expected_lines, actual_lines))
 
-    diff = difflib.HtmlDiff(tabsize=4, wrapcolumn=100).make_table(
-        expected_lines,
-        actual_lines,
-        fromdesc=f"Expected — {html.escape(test_name)}",
-        todesc=f"Actual — {html.escape(test_name)}"
-    )
+    left_column = []
+    right_column = []
 
-    return f"<div class='diff-container'>{diff}</div>"
+    for line in diff:
+        tag = line[:2]
+        content = _mark_invisibles(line[2:])
+
+        if tag == "  ":  # unchanged
+            left_column.append(f"<div class='line keep'>{content}</div>")
+            right_column.append(f"<div class='line keep'>{content}</div>")
+        elif tag == "- ":  # only in expected
+            left_column.append(f"<div class='line removed'>{content}</div>")
+            right_column.append("<div class='line empty'></div>")
+        elif tag == "+ ":  # only in actual
+            left_column.append("<div class='line empty'></div>")
+            right_column.append(f"<div class='line added'>{content}</div>")
+        elif tag == "? ":  # diff hints (ignore)
+            continue
+
+    # Balance both columns’ height
+    max_len = max(len(left_column), len(right_column))
+    while len(left_column) < max_len:
+        left_column.append("<div class='line empty'></div>")
+    while len(right_column) < max_len:
+        right_column.append("<div class='line empty'></div>")
+
+    html_diff = f"""
+
+
+    <div class="diff-container">
+        <div class="diff-column">
+            <div class="diff-header">Expected</div>
+            {''.join(left_column)}
+        </div>
+        <div class="diff-column">
+            <div class="diff-header">Actual</div>
+            {''.join(right_column)}
+        </div>
+    </div>
+    """
+
+    return f"<h3>{html.escape(test_name)}</h3>{html_diff}"

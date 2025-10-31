@@ -244,7 +244,7 @@ def generate_side_by_side_diff(expected_output: str, actual_output: str, test_na
     Generate a clean, side-by-side HTML diff view (Expected | Actual)
     with visible whitespace, tabs, CR/LF, and colored differences.
     """
-    if not USE_OLD_DIFF_STYLE:
+    if USE_OLD_DIFF_STYLE:
         return None
 
     # Keep newline characters so we can highlight missing/extra ones

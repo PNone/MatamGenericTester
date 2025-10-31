@@ -1,6 +1,8 @@
-from utils.config import NORMAL_HTML_NEWLINE, HTML_COLORED_NEWLINE, HTML_COLORED_WHITESPACE
+from utils.config import NORMAL_HTML_NEWLINE, HTML_COLORED_NEWLINE, HTML_COLORED_WHITESPACE, USE_OLD_DIFF_STYLE
 from utils.matam_types import Summary, TestResult
 from os import getcwd, chdir
+import html
+import difflib
 
 
 def simple_html_format(text: str) -> str:
@@ -22,13 +24,20 @@ def format_test_string_for_html(field: str, field_title: str) -> str:
 
 
 def format_summary_for_html(summary: Summary) -> str:
-    report = ''
-    report += f'<p>{summary.get("title")}</p>'
+    report = f'<p>{summary.get("title")}</p>'
+
+    # If there’s a pre-rendered diff HTML, include it directly (no escaping)
+    diff_html: str = summary.get("diff_html", None)
+    error: str = summary.get("error")
+    if not USE_OLD_DIFF_STYLE and diff_html is not None and error is not None:
+        report += f'<div class="diff-wrapper">{diff_html}</div>'
+        return report  # Skip the standard grid in this case
+
     report += '<div class="grid-container-element">'
     expected: str = summary.get("expected")
     if expected is not None:
         report += format_test_string_for_html(expected, 'Expected Output:')
-    error: str = summary.get("error")
+
     if error is not None:
         report += format_test_string_for_html(error, 'Error:')
     actual: str = summary.get("actual")
@@ -65,6 +74,21 @@ def generate_summary_html_content(results: list[TestResult], amount_failed: int)
     html += '''
 </body>
 </html>'''
+
+    # Style for highlighting invisibles
+    html += """
+        <style>
+            table.diff { border-collapse: collapse; font-family: monospace; font-size: 13px; }
+            td, th { padding: 2px 6px; vertical-align: top; border: 1px solid #ddd; }
+            .diff_add { background: #c6efce; }  /* green */
+            .diff_sub { background: #ffc7ce; }  /* red */
+            .diff_chg { background: #ffeb9c; }  /* yellow */
+            .ws  { color: #999; background-color: #f5f5f5; }
+            .tab { color: #3b82f6; }
+            .cr  { color: #dc2626; font-weight: bold; }
+            .nl  { color: #16a34a; }
+        </style>
+        """
 
     html += '''
 <script>
@@ -182,3 +206,29 @@ def create_html_report_from_results(results: list[TestResult], initial_workdir: 
     chdir(initial_workdir)
     create_html_report(html, html_name)
     chdir(curr_workdir)
+
+
+def _highlight_whitespace_chars(s: str) -> str:
+    s = s.replace(" ", '<span class="ws">·</span>')
+    s = s.replace("\t", '<span class="tab">→</span>')
+    s = s.replace("\r", '<span class="cr">␍</span>')
+    s = s.replace("\n", '<span class="nl">⏎</span>\n')
+    return s
+
+
+def generate_html_diff(expected_output: str, actual_output: str, test_name: str) -> str:
+    """Return an HTML diff string highlighting invisible chars distinctly."""
+    expected_html = _highlight_whitespace_chars(html.escape(expected_output))
+    actual_html = _highlight_whitespace_chars(html.escape(actual_output))
+
+    expected_lines = expected_html.splitlines(keepends=True)
+    actual_lines = actual_html.splitlines(keepends=True)
+
+    diff = difflib.HtmlDiff(tabsize=4, wrapcolumn=100).make_table(
+        expected_lines,
+        actual_lines,
+        fromdesc=f"Expected — {html.escape(test_name)}",
+        todesc=f"Actual — {html.escape(test_name)}"
+    )
+
+    return f"<div class='diff-container'>{diff}</div>"

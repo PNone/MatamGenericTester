@@ -57,11 +57,13 @@ def remove_error_pipes_from_command(command: str) -> str:
         return command_without_err_pipe.replace('&>1', '>').replace('2>&1', '')
 
 
-def summarize_failed_test(test_name: str, expected_output: str, actual_output: str) -> Summary:
+def summarize_failed_test(test_name: str, expected_output: str, actual_output: str, diff_html: str) -> Summary:
     return Summary(
         title=f"{test_name} - Failed!",
         expected=expected_output,
-        actual=actual_output
+        actual=actual_output,
+        error=None,
+        diff_html=diff_html
     )
 
 
@@ -70,7 +72,7 @@ def summarize_failed_test_due_to_exception(test_name: str, expected_output: str,
     return Summary(
         title=f"{test_name} - Failed due to an error in the tester!",
         expected=expected_output,
-        error=exception,
+        error=exception
     )
 
 

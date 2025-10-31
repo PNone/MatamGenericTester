@@ -33,6 +33,7 @@ class Summary(TypedDict):
     actual: str | None
     expected: str | None
     error: str | None
+    diff_html: str | None
 
 
 class TestResult(TypedDict):

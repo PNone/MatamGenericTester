@@ -88,7 +88,7 @@ def generate_summary_html_content(results: list[TestResult], amount_failed: int)
             white-space: pre-wrap;
             border: 1px solid #ddd;
             border-radius: 6px;
-            overflow: hidden;
+            overflow-x: scroll;
             margin-bottom: 1em;
         }
         .diff-column {
@@ -270,8 +270,7 @@ def generate_side_by_side_diff(expected_output: str, actual_output: str, test_na
         elif tag == "+ ":  # only in actual
             left_column.append("<div class='line empty'></div>")
             right_column.append(f"<div class='line added'>{content}</div>")
-        elif tag == "? ":  # diff hints (ignore)
-            continue
+        # ignoring diff hints: "? "
 
     # Balance both columns’ height
     max_len = max(len(left_column), len(right_column))

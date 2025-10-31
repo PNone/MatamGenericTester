@@ -27,7 +27,7 @@ def format_summary_for_html(summary: Summary) -> str:
     report = f'<p>{summary.get("title")}</p>'
 
     # If there’s a pre-rendered diff HTML, include it directly (no escaping)
-    diff_html: str = summary.get("diff_html", None)
+    diff_html: str = summary.get("diff_html")
     error: str = summary.get("error")
     if not USE_OLD_DIFF_STYLE and diff_html is not None and error is not None:
         report += f'<div class="diff-wrapper">{diff_html}</div>'
